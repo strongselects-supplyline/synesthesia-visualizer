@@ -23,20 +23,52 @@
         </header>
 
         <div class="controls-container">
-            <div class="control-group">
+            <!-- Mode Toggles -->
+            <div class="mode-toggles">
+                <button id="modeCatalogBtn" class="glass-btn active">Catalog</button>
+                <button id="modeLiveBtn" class="glass-btn">Live Audio</button>
+            </div>
+
+            <!-- Catalog Mode Controls -->
+            <div id="catalogControls" class="control-group active-group">
                 <label for="trackSelector">Select Track</label>
                 <select id="trackSelector" class="glass-select">
                     <!-- Populated dynamically from catalog.js -->
                 </select>
             </div>
 
+            <!-- Live Audio Mode Controls (Phase 2 Placeholder) -->
+            <div id="liveAudioControls" class="control-group hidden">
+                <label>Audio Source</label>
+                <div class="radio-group">
+                    <input type="radio" id="srcFile" name="audioSrc" value="file" checked>
+                    <label for="srcFile">File Upload</label>
+
+                    <input type="radio" id="srcMic" name="audioSrc" value="mic">
+                    <label for="srcMic">Microphone</label>
+                </div>
+                <input type="file" id="audioFileUpload" accept="audio/*" class="glass-btn">
+            </div>
+
+            <!-- Global Controls Panel -->
             <div class="info-panel glass-card">
                 <div class="info-item">
                     <span class="label">Current Hex</span>
                     <span id="hexDisplay" class="value">#2d3142</span>
                 </div>
+
+                <!-- The Forge Concept: Production Stage Slider -->
+                <div class="info-item title-row mt-3">
+                    <span class="label">Production Stage (The Forge)</span>
+                </div>
                 <div class="info-item">
-                    <span class="label">Intensity</span>
+                    <input type="range" id="forgeSlider" min="0" max="100" value="100" class="glass-range">
+                </div>
+                <!-- Manual Intensity Override -->
+                <div class="info-item title-row mt-2">
+                    <span class="label">Base Intensity</span>
+                </div>
+                <div class="info-item">
                     <input type="range" id="intensitySlider" min="1" max="100" value="50" class="glass-range">
                 </div>
             </div>
@@ -48,6 +80,8 @@
     </div>
 
     <script src="catalog.js"></script>
+    <script src="audio.js"></script>
+    <script src="midi.js"></script>
     <script src="visualizer.js"></script>
 </body>
 
