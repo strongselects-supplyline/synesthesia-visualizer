@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synesthesia Visualizer // Cloud State</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <canvas id="visualizerCanvas"></canvas>
+
+    <div class="ui-overlay">
+        <header>
+            <h1 class="brand">Synesthesia <span class="accent">Visualizer</span></h1>
+            <p class="subtitle">Cloud State // Immersive Audio-Visual Experience</p>
+        </header>
+
+        <div class="controls-container">
+            <div class="control-group">
+                <label for="trackSelector">Select Track</label>
+                <select id="trackSelector" class="glass-select">
+                    <!-- Populated dynamically from catalog.js -->
+                </select>
+            </div>
+
+            <div class="info-panel glass-card">
+                <div class="info-item">
+                    <span class="label">Current Hex</span>
+                    <span id="hexDisplay" class="value">#2d3142</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">Intensity</span>
+                    <input type="range" id="intensitySlider" min="1" max="100" value="50" class="glass-range">
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>&copy; 2026 Ethan Payton // All Love</p>
+        </footer>
+    </div>
+
+    <script src="catalog.js"></script>
+    <script src="visualizer.js"></script>
+</body>
+
+</html>
