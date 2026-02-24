@@ -465,9 +465,9 @@ function updateKeyDetection() {
                 }
             }
 
-            // Sub-bass: 100-180Hz (skip 60-100Hz where kick fundamentals live)
+            // Sub-bass: 65-180Hz (bass synths, 808s, bass guitar fundamentals)
             const midFreq = (freqLow + freqHigh) / 2;
-            if (midFreq >= 100 && midFreq < 180) {
+            if (midFreq >= 65 && midFreq < 180) {
                 subBassChroma[pc] += energy;
             } else if (midFreq >= 180 && midFreq < 400) {
                 bassChroma[pc] += energy;
@@ -478,10 +478,10 @@ function updateKeyDetection() {
 
     if (totalMagnitude < 1.0) return;
 
-    // Weighted blend: sub-bass 2x (root), bass 3x (harmonic content), full 1x
+    // Weighted blend: sub-bass 3x, bass 2x, full 1x
     const rawChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
-        rawChroma[i] = subBassChroma[i] * 2.0 + bassChroma[i] * 3.0 + fullChroma[i] * 1.0;
+        rawChroma[i] = subBassChroma[i] * 3.0 + bassChroma[i] * 2.0 + fullChroma[i] * 1.0;
     }
 
     // === SHORT-TERM chroma (fast — reacts to current chord) ===
