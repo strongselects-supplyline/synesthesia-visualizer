@@ -407,29 +407,44 @@ function updateKeyDetection() {
     const sampleRate = audioCtx.sampleRate;
     const binWidth = sampleRate / analyser.fftSize;
 
-    // Build raw chroma vector from FFT data
-    const rawChroma = new Float32Array(12);
+    // Build TWO chromagrams: bass-only + full range
+    // The bass chromagram heavily favors the actual key root
+    // (bass almost always plays the root note more than any chord tone)
+    const bassChroma = new Float32Array(12);
+    const fullChroma = new Float32Array(12);
     let totalMagnitude = 0;
 
     for (let i = 1; i < bufferLength; i++) {
         const magnitude = dataArray[i] / 255;
-        if (magnitude < 0.03) continue; // lower noise gate for better pitch capture
+        if (magnitude < 0.03) continue;
 
         const freq = i * binWidth;
-        if (freq < 80 || freq > 4000) continue; // tighter range: bass + vocals + leads
+        if (freq < 60 || freq > 4000) continue;
 
-        // Convert frequency to pitch class (0=C, 1=C#, ... 11=B)
         const midiNote = 12 * Math.log2(freq / 440) + 69;
         const pitchClass = Math.round(midiNote) % 12;
         const normalizedPC = pitchClass < 0 ? pitchClass + 12 : pitchClass;
 
-        // Weight by magnitude cubed (STRONGLY emphasize dominant pitches)
-        rawChroma[normalizedPC] += magnitude * magnitude * magnitude;
+        const mag3 = magnitude * magnitude * magnitude;
+
+        if (freq < 350) {
+            // Bass register (60-350Hz): bass guitar, bass synth, kick fundamental
+            // These notes almost always outline the root of the key
+            bassChroma[normalizedPC] += mag3 * 2.0; // extra weight
+        }
+
+        // Full range always gets a vote
+        fullChroma[normalizedPC] += mag3;
         totalMagnitude += magnitude;
     }
 
-    // Skip if very little total energy
     if (totalMagnitude < 1.0) return;
+
+    // Blend: 40% bass + 60% full — bass has outsized influence on key center
+    const rawChroma = new Float32Array(12);
+    for (let i = 0; i < 12; i++) {
+        rawChroma[i] = bassChroma[i] * 0.4 + fullChroma[i] * 0.6;
+    }
 
     // Smooth the chroma vector over time
     for (let i = 0; i < 12; i++) {
