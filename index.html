@@ -12,7 +12,7 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap"
         rel="stylesheet">
 
-    <!-- Three.js Import Map for ES Modules -->
+    <!-- Three.js Import Map -->
     <script type="importmap">
     {
         "imports": {
@@ -24,8 +24,11 @@
 </head>
 
 <body>
-    <!-- WebGL renderer replaces this canvas element -->
+    <!-- WebGL renderer replaces this canvas -->
     <canvas id="visualizerCanvas"></canvas>
+
+    <!-- Hidden audio element for catalog playback -->
+    <audio id="catalogAudioPlayer" crossorigin="anonymous"></audio>
 
     <div class="ui-overlay">
         <header>
@@ -44,6 +47,7 @@
             <div id="catalogControls" class="control-group active-group">
                 <label for="trackSelector">Select Track</label>
                 <select id="trackSelector" class="glass-select"></select>
+                <div id="catalogPlaybackStatus" class="playback-status"></div>
             </div>
 
             <!-- Live Audio Mode Controls -->
@@ -68,7 +72,7 @@
                 </div>
             </div>
 
-            <!-- Global Controls Panel -->
+            <!-- Global Controls -->
             <div class="info-panel glass-card">
                 <div class="info-item">
                     <span class="label">Current Hex</span>
@@ -106,28 +110,42 @@
         </footer>
     </div>
 
-    <!-- Non-module scripts (set globals for visualizer module) -->
+    <!-- Non-module scripts (set globals before module runs) -->
     <script src="catalog.js"></script>
     <script src="audio.js"></script>
     <script src="midi.js"></script>
 
-    <!-- WebGL visualizer runs as ES module (imports Three.js) -->
+    <!-- WebGL visualizer (ES module) -->
     <script type="module" src="visualizer.js"></script>
 
-    <!-- Beat dot animation (tiny inline script) -->
+    <!-- Beat dot + BPM readout animation -->
     <script>
         (function updateBeatUI() {
             const dot = document.getElementById('beatDot');
             const bpmEl = document.getElementById('bpmDisplay');
-            if (window.audioData && window.audioData.isActive) {
-                if (window.audioData.isBeat && dot) {
+            const statusEl = document.getElementById('catalogPlaybackStatus');
+            const audio = window.audioData;
+
+            if (audio && audio.isActive) {
+                if (audio.isBeat && dot) {
                     dot.classList.add('flash');
                     setTimeout(() => dot.classList.remove('flash'), 120);
                 }
-                if (bpmEl && window.audioData.bpm > 0) {
-                    bpmEl.textContent = window.audioData.bpm + ' BPM';
+                if (bpmEl && audio.bpm > 0) {
+                    bpmEl.textContent = audio.bpm + ' BPM';
                 }
             }
+
+            // Catalog playback status
+            const player = document.getElementById('catalogAudioPlayer');
+            if (statusEl && player && player.src && !player.paused) {
+                const pct = player.duration ? Math.round((player.currentTime / player.duration) * 100) : 0;
+                statusEl.textContent = `▶ Playing... ${pct}%`;
+                statusEl.style.opacity = '1';
+            } else if (statusEl) {
+                statusEl.style.opacity = '0';
+            }
+
             requestAnimationFrame(updateBeatUI);
         })();
     </script>

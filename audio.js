@@ -1,6 +1,7 @@
 // ============================================================
-// Synesthesia Visualizer — Audio Engine v2.0
-// Beat Detection (Spectral Flux) + Temporal Smoothing + Clean Lifecycle
+// Synesthesia Visualizer — Audio Engine v2.1
+// Beat Detection (Spectral Flux) + Temporal Smoothing
+// + Catalog Playback via <audio> element
 // ============================================================
 
 let audioCtx = null;
@@ -10,8 +11,10 @@ let dataArray = null;
 let prevSpectrum = null;
 let bufferLength = 0;
 let audioLoopId = null;
-let currentStream = null; // track mic stream for clean teardown
-let currentBufferSource = null; // track file playback for clean teardown
+let currentStream = null;
+let currentBufferSource = null;
+let catalogAudioEl = null; // <audio> element for catalog playback
+let catalogMediaSource = null; // MediaElementSourceNode
 
 // --- Exposed Audio Data (consumed by visualizer.js) ---
 window.audioData = {
@@ -21,29 +24,35 @@ window.audioData = {
     mids: 0,
     highs: 0,
 
+    // Raw (unsmoothed) for violent reactions
+    rawSubBass: 0,
+    rawBass: 0,
+    rawMids: 0,
+    rawHighs: 0,
+
     // Beat detection
-    isBeat: false,       // true on the frame a beat is detected
-    beatIntensity: 0,    // 0–1 strength of the detected beat
-    bpm: 0,              // estimated BPM (rolling average)
-    timeSinceBeat: 0,    // ms since last beat
+    isBeat: false,
+    beatIntensity: 0,    // 0–1 strength of detected beat
+    bpm: 0,
+    timeSinceBeat: 0,
 
     // Energy
-    energy: 0,           // overall energy 0–1
-    spectralFlux: 0,     // raw spectral flux value
+    energy: 0,
+    spectralFlux: 0,
 
     isActive: false
 };
 
 // --- Tuning Constants ---
-const SMOOTHING_RISE = 0.25;     // how fast bands ramp UP (lower = smoother)
-const SMOOTHING_FALL = 0.08;     // how fast bands decay DOWN
-const BEAT_THRESHOLD = 1.4;      // flux must exceed avg * this multiplier
-const BEAT_COOLDOWN_MS = 120;    // minimum ms between beats
-const BPM_HISTORY_SIZE = 24;     // number of beat intervals to average for BPM
+const SMOOTHING_RISE = 0.35;     // fast attack
+const SMOOTHING_FALL = 0.06;     // slow release (breathe)
+const BEAT_THRESHOLD = 1.35;     // flux must exceed avg * this
+const BEAT_COOLDOWN_MS = 100;    // minimum ms between beats (allows fast double-kicks)
+const BPM_HISTORY_SIZE = 24;
 
 // --- Beat Detection State ---
 let fluxHistory = [];
-const FLUX_HISTORY_SIZE = 43;    // ~0.7s at 60fps — local average window
+const FLUX_HISTORY_SIZE = 43;
 let lastBeatTime = 0;
 let beatIntervals = [];
 
@@ -62,7 +71,7 @@ function initAudio() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.3; // slight hardware smoothing
+    analyser.smoothingTimeConstant = 0.2; // less hardware smoothing = more transient detail
     bufferLength = analyser.frequencyBinCount;
     dataArray = new Uint8Array(bufferLength);
     prevSpectrum = new Float32Array(bufferLength);
@@ -70,7 +79,6 @@ function initAudio() {
 }
 
 function teardownSource() {
-    // Cleanly disconnect whatever source is active
     try {
         if (currentBufferSource) {
             currentBufferSource.stop();
@@ -91,6 +99,12 @@ function teardownSource() {
         currentStream = null;
     }
 
+    // Stop catalog audio element
+    if (catalogAudioEl) {
+        catalogAudioEl.pause();
+        catalogAudioEl.currentTime = 0;
+    }
+
     window.audioData.isActive = false;
 }
 
@@ -104,7 +118,55 @@ function ensureContext() {
 }
 
 // ============================================================
-// FREQUENCY BAND EXTRACTION (with asymmetric smoothing)
+// CATALOG PLAYBACK (plays actual audio for catalog tracks)
+// ============================================================
+
+window.playCatalogTrack = function(url) {
+    if (!url) return;
+
+    ensureContext();
+    teardownSource();
+
+    // Get or create the hidden <audio> element
+    catalogAudioEl = document.getElementById('catalogAudioPlayer');
+    if (!catalogAudioEl) {
+        catalogAudioEl = document.createElement('audio');
+        catalogAudioEl.id = 'catalogAudioPlayer';
+        catalogAudioEl.crossOrigin = 'anonymous';
+        document.body.appendChild(catalogAudioEl);
+    }
+
+    catalogAudioEl.src = url;
+
+    // Only create MediaElementSource once per element
+    if (!catalogMediaSource) {
+        catalogMediaSource = audioCtx.createMediaElementSource(catalogAudioEl);
+    }
+
+    catalogMediaSource.connect(analyser);
+    analyser.connect(audioCtx.destination);
+
+    catalogAudioEl.play().then(() => {
+        startProcessing();
+    }).catch(err => {
+        console.error('Catalog playback failed:', err);
+    });
+
+    catalogAudioEl.onended = () => {
+        window.audioData.isActive = false;
+    };
+};
+
+window.stopCatalogTrack = function() {
+    if (catalogAudioEl) {
+        catalogAudioEl.pause();
+        catalogAudioEl.currentTime = 0;
+    }
+    window.audioData.isActive = false;
+};
+
+// ============================================================
+// FREQUENCY BAND EXTRACTION
 // ============================================================
 
 function bandAverage(arr, start, end) {
@@ -116,34 +178,52 @@ function bandAverage(arr, start, end) {
     return sum / (clamped - start);
 }
 
+// Weighted band average — emphasize louder bins for punchier response
+function bandWeightedPeak(arr, start, end) {
+    let peak = 0;
+    let sum = 0;
+    const clamped = Math.min(end, arr.length);
+    for (let i = start; i < clamped; i++) {
+        const v = arr[i] / 255;
+        sum += v;
+        if (v > peak) peak = v;
+    }
+    const avg = sum / (clamped - start);
+    // Blend: 60% peak + 40% average — transients punch through
+    return peak * 0.6 + avg * 0.4;
+}
+
 function smoothValue(current, target, rise, fall) {
-    // Asymmetric EMA: fast attack, slow release
     const factor = target > current ? rise : fall;
     return current + (target - current) * factor;
 }
 
 function updateBands() {
-    // Raw averages normalized to 0–1
-    const rawSub  = bandAverage(dataArray, 1, 3) / 255;
-    const rawBass = bandAverage(dataArray, 3, 12) / 255;
-    const rawMids = bandAverage(dataArray, 12, 186) / 255;
-    const rawHighs = bandAverage(dataArray, 186, 930) / 255;
+    // Use peak-weighted extraction for punchier response
+    const rawSub  = bandWeightedPeak(dataArray, 1, 3);
+    const rawBass = bandWeightedPeak(dataArray, 3, 12);
+    const rawMids = bandWeightedPeak(dataArray, 12, 186);
+    const rawHighs = bandWeightedPeak(dataArray, 186, 930);
 
-    // Smooth with asymmetric attack/release
+    // Store raw values for violent/immediate reactions
+    window.audioData.rawSubBass = rawSub;
+    window.audioData.rawBass = rawBass;
+    window.audioData.rawMids = rawMids;
+    window.audioData.rawHighs = rawHighs;
+
+    // Smoothed values for fluid motion
     window.audioData.subBass = smoothValue(window.audioData.subBass, rawSub, SMOOTHING_RISE, SMOOTHING_FALL);
     window.audioData.bass    = smoothValue(window.audioData.bass, rawBass, SMOOTHING_RISE, SMOOTHING_FALL);
     window.audioData.mids    = smoothValue(window.audioData.mids, rawMids, SMOOTHING_RISE, SMOOTHING_FALL);
     window.audioData.highs   = smoothValue(window.audioData.highs, rawHighs, SMOOTHING_RISE, SMOOTHING_FALL);
 
-    // Overall energy (weighted toward bass)
+    // Overall energy (weighted toward bass for music)
     window.audioData.energy = (rawSub * 0.3) + (rawBass * 0.35) + (rawMids * 0.25) + (rawHighs * 0.1);
 }
 
 // ============================================================
-// BEAT DETECTION (Spectral Flux)
+// BEAT DETECTION (Spectral Flux — onset detection)
 // ============================================================
-// Spectral flux = sum of positive frequency magnitude changes frame-to-frame.
-// When flux spikes above a running average * threshold → beat detected.
 
 function detectBeat() {
     let flux = 0;
@@ -153,19 +233,15 @@ function detectBeat() {
         const prev = prevSpectrum[i];
         const diff = current - prev;
 
-        // Only count INCREASES (onset energy, not decay)
         if (diff > 0) {
             flux += diff;
         }
-
         prevSpectrum[i] = current;
     }
 
-    // Normalize flux by bin count for consistency across FFT sizes
     flux = flux / bufferLength * 100;
     window.audioData.spectralFlux = flux;
 
-    // Maintain rolling average
     fluxHistory.push(flux);
     if (fluxHistory.length > FLUX_HISTORY_SIZE) {
         fluxHistory.shift();
@@ -177,12 +253,11 @@ function detectBeat() {
 
     window.audioData.timeSinceBeat = timeSinceLast;
 
-    // Beat condition: flux exceeds threshold AND cooldown has passed
     if (flux > avgFlux * BEAT_THRESHOLD && timeSinceLast > BEAT_COOLDOWN_MS) {
         window.audioData.isBeat = true;
-        window.audioData.beatIntensity = Math.min((flux / avgFlux) / 3, 1.0); // normalize strength
+        // Scale beat intensity more aggressively
+        window.audioData.beatIntensity = Math.min(Math.pow((flux / avgFlux) / 2, 1.5), 1.0);
 
-        // BPM estimation from interval history
         if (lastBeatTime > 0) {
             beatIntervals.push(timeSinceLast);
             if (beatIntervals.length > BPM_HISTORY_SIZE) {
@@ -195,8 +270,7 @@ function detectBeat() {
         lastBeatTime = now;
     } else {
         window.audioData.isBeat = false;
-        // Decay beat intensity smoothly between beats
-        window.audioData.beatIntensity *= 0.92;
+        window.audioData.beatIntensity *= 0.88;
     }
 }
 
@@ -242,7 +316,6 @@ function connectMic() {
             currentStream = stream;
             source = audioCtx.createMediaStreamSource(stream);
             source.connect(analyser);
-            // Do NOT connect analyser to destination (no feedback loop)
             startProcessing();
         })
         .catch(err => console.error('Mic access denied:', err));
@@ -273,7 +346,7 @@ fileInput.addEventListener('change', function () {
             currentBufferSource = audioCtx.createBufferSource();
             currentBufferSource.buffer = buffer;
             currentBufferSource.connect(analyser);
-            analyser.connect(audioCtx.destination); // play through speakers
+            analyser.connect(audioCtx.destination);
 
             currentBufferSource.onended = () => {
                 window.audioData.isActive = false;
@@ -289,7 +362,7 @@ fileInput.addEventListener('change', function () {
 });
 
 // ============================================================
-// SOURCE SWITCHING (radio buttons)
+// SOURCE SWITCHING
 // ============================================================
 
 radioMic.addEventListener('change', () => {
@@ -298,13 +371,17 @@ radioMic.addEventListener('change', () => {
 
 radioFile.addEventListener('change', () => {
     if (radioFile.checked) {
-        teardownSource(); // stop mic, wait for file
+        teardownSource();
     }
 });
 
-// Re-activate processing when entering Live mode
 document.getElementById('modeLiveBtn').addEventListener('click', () => {
     ensureContext();
+    // Stop catalog playback when switching to live
+    if (catalogAudioEl) {
+        catalogAudioEl.pause();
+        catalogAudioEl.currentTime = 0;
+    }
     if (radioMic.checked && !window.audioData.isActive) {
         connectMic();
     } else if (window.audioData.isActive && !audioLoopId) {

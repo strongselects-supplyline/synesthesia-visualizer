@@ -1,4 +1,4 @@
-// Key → Hex lookup (for auto-fill logic) - Based on Ethan Payton's Personal System
+// Key → Hex lookup — Ethan Payton's Personal Synesthesia System
 const synMap = {
     'C Major': '#00A3A3', 'A Minor': '#00A3A3', // Teal
     'G Major': '#FFFFF0', 'E Minor': '#FFFFF0', // Cream
@@ -14,48 +14,57 @@ const synMap = {
     'F Major': '#DC143C', 'D Minor': '#DC143C', // Red
 };
 
-const allLoveCatalog = [
+// Window-expose for module access
+window.allLoveCatalog = [
     {
         trackNumber: 1,
+        id: 'see-me',
         title: "SEE ME",
-        bpm: 120, // TBD - default fallback
-        key: "B Minor", // TBD - default fallback
+        bpm: 120,
+        key: "B Minor",
         status: "single",
-        moods: { sexy: 89, chill: 57, happy: 38, sad: 10 } // normalized
+        moods: { sexy: 89, chill: 57, happy: 38, sad: 10 },
+        audioUrl: 'audio/see-me.mp3'
     },
     {
         trackNumber: 2,
+        id: 'esl',
         title: "ESL",
-        bpm: 105, // TBD
-        key: "C# Minor", // TBD
+        bpm: 105,
+        key: "C# Minor",
         status: "single",
-        moods: { sexy: 87, chill: 63, happy: 38, sad: 10 }
+        moods: { sexy: 87, chill: 63, happy: 38, sad: 10 },
+        audioUrl: 'audio/esl.mp3'
     },
     {
         trackNumber: 3,
+        id: 'sweet-frustration',
         title: "Sweet Frustration",
-        bpm: 124, // TBD
-        key: "A# Minor", // Cyanite output was Bb min. Mapped for now. TBD.
+        bpm: 124,
+        key: "A# Minor",
         status: "single",
-        moods: { sexy: 85, chill: 36, happy: 69, sad: 10 }
+        moods: { sexy: 85, chill: 36, happy: 69, sad: 10 },
+        audioUrl: 'audio/sweet-frustration.mp3'
     },
     {
         trackNumber: 4,
         id: 'hollywood-fever',
         title: 'Hollywood Fever',
-        key: 'F Major', // Cyanite: F Major / Musicstax: C Major - treating as F Major
+        key: 'F Major',
         bpm: 122,
         status: 'released',
-        moods: { sexy: 76, chill: 58, happy: 71, sad: 4 } // 0-100 scale from cyanite
+        moods: { sexy: 76, chill: 58, happy: 71, sad: 4 },
+        audioUrl: 'audio/hollywood-fever.mp3'
     },
     {
         trackNumber: 5,
         id: 'roll-with-it',
         title: 'Roll With It',
-        key: 'Ab Major', // F minor relative
+        key: 'Ab Major',
         bpm: 105,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/roll-with-it.mp3'
     },
     {
         trackNumber: 6,
@@ -64,60 +73,66 @@ const allLoveCatalog = [
         key: 'A Major',
         bpm: 115,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/on-the-move.mp3'
     },
     {
         trackNumber: 7,
         id: 'advance',
         title: 'Advance',
-        key: 'Bb Major', // G minor relative
+        key: 'Bb Major',
         bpm: 118,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/advance.mp3'
     },
     {
         trackNumber: 8,
         id: 'supposed-to-know',
         title: 'Supposed To Know',
-        key: 'A Major', // F# minor relative
+        key: 'A Major',
         bpm: 105,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/supposed-to-know.mp3'
     },
     {
         trackNumber: 9,
         id: 'dance-with-him',
         title: 'Dance With Him',
-        key: 'E Major', // C# minor relative
+        key: 'E Major',
         bpm: 208,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/dance-with-him.mp3'
     },
     {
         trackNumber: 10,
         id: 'ride-with-me',
         title: 'Ride With Me',
-        key: 'Eb Major', // C minor relative
+        key: 'Eb Major',
         bpm: 107,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/ride-with-me.mp3'
     },
     {
         trackNumber: 11,
         id: 'origami',
         title: 'Origami',
-        key: 'C Major', // A minor relative
+        key: 'C Major',
         bpm: 120,
         status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 } // confirm
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/origami.mp3'
     }
 ];
 
-// Helper to calculate average intensity based on the moods to power particles
-allLoveCatalog.forEach(track => {
-    // Basic normalized intensity rating for the visualizer [0.0 - 1.0]
+// Compute derived fields
+window.allLoveCatalog.forEach(track => {
     track.intensity = ((track.moods.sexy || 50) + (track.moods.chill || 50)) / 200;
-
-    // Auto-map color using the new synMap logic
     track.synHex = synMap[track.key] || '#000000';
 });
+
+// Legacy alias
+const allLoveCatalog = window.allLoveCatalog;
