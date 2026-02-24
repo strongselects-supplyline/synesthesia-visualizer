@@ -79,12 +79,20 @@ const PHASE_HISTORY_SIZE = 450;  // every 4th frame = ~30s
 let phaseEnergyHistory = [];
 
 // --- Key Detection State ---
-const CHROMA_SMOOTH = 0.18;          // smoothing factor for chroma vector (higher = faster response)
-let chromaVector = new Float32Array(12);  // C, C#, D, D#, E, F, F#, G, G#, A, A#, B
+const CHROMA_SMOOTH = 0.18;
+let chromaVector = new Float32Array(12);
 let keyStableFrames = 0;
 let lastDetectedKey = '';
-const KEY_STABLE_THRESHOLD = 25;     // frames (~0.4s) key must be stable before accepting
+const KEY_STABLE_THRESHOLD = 15;     // frames (~0.25s) before first guess
 const KEY_CONFIDENCE_MIN = 0.3;
+
+// Key VOTING system — accumulates evidence across the entire song
+let keyVotes = {};           // { 'A Major': 142, 'F# Minor': 89, ... }
+let totalKeyVotes = 0;
+let lockedKey = '';          // once locked, this IS the song's key
+let keyIsLocked = false;
+const LOCK_THRESHOLD = 0.55;     // lock in when a key has 55% of all votes
+const OVERTURN_THRESHOLD = 0.70; // once locked, need 70% to change (true modulation)
 
 // Krumhansl-Schmuckler key profiles
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -471,44 +479,89 @@ function updateKeyDetection() {
         }
     }
 
-    const confidence = Math.max(0, Math.min(1, (bestCorr + 1) / 2)); // map -1..1 to 0..1
+    const confidence = Math.max(0, Math.min(1, (bestCorr + 1) / 2));
 
-    // Check if best key is the same OR relative major/minor of last detected
-    const isRelated = (bestKey === lastDetectedKey) ||
-        (RELATIVE_MINOR_MAP[bestKey] === lastDetectedKey) ||
-        (RELATIVE_MINOR_MAP[lastDetectedKey] === bestKey);
+    // --- VOTING SYSTEM ---
+    // Every frame's best guess gets a vote, weighted by confidence
+    // Related major/minor pairs vote together (A Major + F# Minor both count as 'A Major' group)
+    const voteKey = bestKey;
+    const relatedKey = RELATIVE_MINOR_MAP[bestKey] || '';
 
-    if (isRelated) {
-        keyStableFrames++;
-    } else {
-        lastDetectedKey = bestKey;
-        keyStableFrames = 0;
+    // Cast vote (confidence-weighted)
+    const voteWeight = confidence * confidence; // squared: high confidence counts way more
+    if (!keyVotes[voteKey]) keyVotes[voteKey] = 0;
+    keyVotes[voteKey] += voteWeight;
+    // Related key gets a smaller vote too
+    if (relatedKey) {
+        if (!keyVotes[relatedKey]) keyVotes[relatedKey] = 0;
+        keyVotes[relatedKey] += voteWeight * 0.5;
+    }
+    totalKeyVotes += voteWeight;
+
+    // Find the leading key by total votes
+    let leadingKey = '';
+    let leadingVotes = 0;
+    for (const [key, votes] of Object.entries(keyVotes)) {
+        // Group related keys: combine A Major + F# Minor votes
+        const related = RELATIVE_MINOR_MAP[key] || '';
+        const combinedVotes = votes + (keyVotes[related] || 0);
+        if (combinedVotes > leadingVotes) {
+            leadingVotes = combinedVotes;
+            // Pick whichever of the pair has more individual votes
+            leadingKey = (keyVotes[related] || 0) > votes ? related : key;
+        }
     }
 
-    // ALWAYS update the display with the current best guess
+    // Voting percentage (how dominant is the leading key?)
+    // Count combined related-key votes vs total
+    const leadingRelated = RELATIVE_MINOR_MAP[leadingKey] || '';
+    const leadingCombined = (keyVotes[leadingKey] || 0) + (keyVotes[leadingRelated] || 0);
+    const votePct = totalKeyVotes > 0 ? leadingCombined / totalKeyVotes : 0;
+
+    // --- LOCK-IN LOGIC ---
+    if (!keyIsLocked) {
+        // Not yet locked: lock when leading key has enough vote share
+        if (votePct >= LOCK_THRESHOLD && totalKeyVotes > 30) {
+            lockedKey = leadingKey;
+            keyIsLocked = true;
+            console.log('[Key LOCKED]', lockedKey, 'with', (votePct * 100).toFixed(0) + '% of votes',
+                '| hex:', SYN_MAP[lockedKey] || 'none');
+        }
+    } else {
+        // Already locked: only overturn if a DIFFERENT key group dominates strongly
+        const lockedRelated = RELATIVE_MINOR_MAP[lockedKey] || '';
+        const isLeadingSameGroup = (leadingKey === lockedKey || leadingKey === lockedRelated);
+        if (!isLeadingSameGroup && votePct >= OVERTURN_THRESHOLD) {
+            lockedKey = leadingKey;
+            console.log('[Key OVERTURNED]', lockedKey, 'with', (votePct * 100).toFixed(0) + '%');
+        }
+    }
+
+    // Set the effective key: locked key if available, otherwise best current guess
+    const effectiveKey = keyIsLocked ? lockedKey : leadingKey;
+    const lockStatus = keyIsLocked ? '🔒' : '🔍';
+
+    // Update UI display
     const keyEl = document.getElementById('detectedKeyDisplay');
     if (keyEl) {
-        keyEl.textContent = `${bestKey} (${Math.round(confidence * 100)}%)`;
+        keyEl.textContent = `${lockStatus} ${effectiveKey} (${Math.round(votePct * 100)}%)`;
     }
 
-    // Accept key when stable enough (or on first detection with any confidence)
-    const accepted = keyStableFrames >= KEY_STABLE_THRESHOLD ||
-        (window.audioData.detectedKey === '' && confidence > 0.4);
-
-    if (accepted) {
-        window.audioData.detectedKey = bestKey;
-        window.audioData.keyConfidence = confidence;
-        window.audioData.detectedHex = SYN_MAP[bestKey] || '';
+    // Set audioData (used by visualizer for color)
+    if (effectiveKey && (keyIsLocked || votePct > 0.35)) {
+        window.audioData.detectedKey = effectiveKey;
+        window.audioData.keyConfidence = votePct;
+        window.audioData.detectedHex = SYN_MAP[effectiveKey] || '';
     }
 
     // Debug logging every 2 seconds
     keyDebugTimer++;
     if (keyDebugTimer % 120 === 0) {
-        console.log('[Key Detection]', bestKey, 'corr:', bestCorr.toFixed(3),
-            'conf:', (confidence * 100).toFixed(0) + '%',
-            'stable:', keyStableFrames, '/', KEY_STABLE_THRESHOLD,
-            'accepted:', accepted,
-            'hex:', SYN_MAP[bestKey] || 'none');
+        console.log('[Key Detection]', lockStatus, effectiveKey,
+            '| votes:', (votePct * 100).toFixed(0) + '%',
+            '| total:', Math.round(totalKeyVotes),
+            '| raw best:', bestKey, bestCorr.toFixed(3),
+            '| hex:', SYN_MAP[effectiveKey] || 'none');
     }
 }
 
@@ -649,6 +702,10 @@ document.getElementById('modeLiveBtn').addEventListener('click', () => {
     chromaVector = new Float32Array(12);
     keyStableFrames = 0;
     lastDetectedKey = '';
+    keyVotes = {};
+    totalKeyVotes = 0;
+    lockedKey = '';
+    keyIsLocked = false;
     window.audioData.detectedKey = '';
     window.audioData.detectedHex = '';
     window.audioData.keyConfidence = 0;
