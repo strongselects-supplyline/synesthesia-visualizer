@@ -1,22 +1,12 @@
 // ============================================================
-// Synesthesia Visualizer — WebGL Render Engine v2.1
-// Three.js + Bloom + VIOLENT Beat Reactivity + Catalog Playback
+// Synesthesia Visualizer — WebGL Engine v3.0 "Front of House"
+// Spatial Frequency Mapping + Immersive Default + Zone Textures
 // ============================================================
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-
-// --- DOM Refs ---
-const trackSelector = document.getElementById('trackSelector');
-const hexDisplay = document.getElementById('hexDisplay');
-const intensitySlider = document.getElementById('intensitySlider');
-const forgeSlider = document.getElementById('forgeSlider');
-const modeCatalogBtn = document.getElementById('modeCatalogBtn');
-const modeLiveBtn = document.getElementById('modeLiveBtn');
-const catalogControls = document.getElementById('catalogControls');
-const liveAudioControls = document.getElementById('liveAudioControls');
 
 // --- State ---
 let currentColor = new THREE.Color('#2d3142');
@@ -40,39 +30,37 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setClearColor(0x061014, 1);
+renderer.setClearColor(0x030810, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.2;
+renderer.toneMappingExposure = 1.3;
 
-// Replace old canvas
 const oldCanvas = document.getElementById('visualizerCanvas');
 renderer.domElement.id = 'visualizerCanvas';
-renderer.domElement.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;';
+renderer.domElement.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:1;';
 oldCanvas.parentNode.replaceChild(renderer.domElement, oldCanvas);
 
 // --- Bloom ---
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-
 const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.6,   // base strength (will be driven dynamically)
-    0.3,   // radius
-    0.65   // threshold
+    0.5, 0.3, 0.6
 );
 composer.addPass(bloomPass);
 
 // ============================================================
-// LAYER 1: Background Wash (full-screen shader)
+// BACKGROUND WASH — Zonal (bass warmth bottom, cool shimmer top)
 // ============================================================
 
 const washUniforms = {
     uTime: { value: 0 },
     uColor: { value: currentColor.clone() },
-    uPulse: { value: 0.0 },
-    uShake: { value: new THREE.Vector2(0, 0) },
-    uForge: { value: 1.0 },
+    uSubBass: { value: 0.0 },
+    uBass: { value: 0.0 },
+    uMids: { value: 0.0 },
+    uHighs: { value: 0.0 },
     uBeatFlash: { value: 0.0 },
+    uForge: { value: 1.0 },
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
 };
 
@@ -88,43 +76,55 @@ const washMaterial = new THREE.ShaderMaterial({
     fragmentShader: `
         uniform float uTime;
         uniform vec3 uColor;
-        uniform float uPulse;
-        uniform vec2 uShake;
-        uniform float uForge;
+        uniform float uSubBass;
+        uniform float uBass;
+        uniform float uMids;
+        uniform float uHighs;
         uniform float uBeatFlash;
-        uniform vec2 uResolution;
+        uniform float uForge;
         varying vec2 vUv;
 
         void main() {
-            vec2 center = vec2(0.5) + uShake;
-            float dist = distance(vUv, center);
+            vec3 bg = vec3(0.012, 0.031, 0.063);
 
-            // CUBIC pulse response — small audio = subtle, big audio = MASSIVE expansion
-            float pulseExp = pow(uPulse, 2.0);
-            float radius = 0.35 + pulseExp * 1.8;
+            // Vertical position: 0 = bottom, 1 = top
+            float y = vUv.y;
+            float x = vUv.x;
+            float centerX = abs(x - 0.5) * 2.0; // 0 at center, 1 at edges
 
-            // Radial gradient
-            float grad = 1.0 - smoothstep(0.0, radius, dist);
-            grad = pow(grad, 1.4);
+            // === BASS ZONE (bottom center) ===
+            // Warm glow anchored to bottom center, expands with sub-bass
+            float bassRadius = 0.3 + pow(uSubBass, 1.5) * 0.7;
+            float bassDist = length(vec2(x - 0.5, y * 1.8)); // squashed vertically, centered low
+            float bassGlow = 1.0 - smoothstep(0.0, bassRadius, bassDist);
+            bassGlow = pow(bassGlow, 1.6);
 
-            // Beat flash — WHITE hot center burst
-            float flashRadius = 0.5 + uBeatFlash * 0.6;
-            float flashGrad = 1.0 - smoothstep(0.0, flashRadius, dist);
-            flashGrad = pow(flashGrad, 2.0);
-            float flash = uBeatFlash * flashGrad;
+            // Bass color: warmer, more saturated version of the key color
+            vec3 bassColor = uColor * 1.3 + vec3(0.1, 0.02, 0.0);
 
-            vec3 bg = vec3(0.024, 0.063, 0.078);
-            vec3 hotWhite = vec3(1.0, 0.97, 0.92);
+            // === MID ZONE (center field) ===
+            float midY = abs(y - 0.5); // distance from vertical center
+            float midGlow = (1.0 - smoothstep(0.0, 0.5, midY)) * uMids * 0.4;
 
-            // Base color wash
-            vec3 col = mix(bg, uColor, grad * uForge * 0.65);
+            // === HIGH ZONE (top + edges) ===
+            float highGlow = y * uHighs * 0.15; // brighter toward top
+            highGlow += centerX * uHighs * 0.08; // shimmer at edges
 
-            // Additive beat flash (white-hot)
-            col += hotWhite * flash * 0.7;
+            // === BEAT FLASH (white-hot center burst) ===
+            float flashDist = length(vec2(x - 0.5, (y - 0.3) * 1.5));
+            float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.6, flashDist));
+            flash = pow(flash, 1.5);
 
-            // Subtle vignette
-            float vignette = 1.0 - pow(dist * 1.1, 2.5);
-            col *= max(vignette, 0.3);
+            // Compose
+            vec3 col = bg;
+            col += bassColor * bassGlow * uForge * 0.6;
+            col += uColor * midGlow * uForge;
+            col += vec3(0.7, 0.8, 1.0) * highGlow * uForge;
+            col += vec3(1.0, 0.97, 0.92) * flash * 0.8;
+
+            // Vignette
+            float vignette = 1.0 - pow(length(vUv - 0.5) * 1.3, 2.5);
+            col *= max(vignette, 0.15);
 
             gl_FragColor = vec4(col, 1.0);
         }
@@ -139,53 +139,51 @@ washMesh.frustumCulled = false;
 scene.add(washMesh);
 
 // ============================================================
-// LAYER 2: Mid-Field Bokeh (GPU Points)
+// ZONE 1: BASS PARTICLES — Bottom Center, Heavy, Gravitational
+// Large orbs that pulse and expand on kicks, anchored low/center
 // ============================================================
 
-const BOKEH_COUNT = 350;
+const BASS_COUNT = 120;
+const bassGeo = new THREE.BufferGeometry();
+const bassPos = new Float32Array(BASS_COUNT * 3);
+const bassSizes = new Float32Array(BASS_COUNT);
+const bassPhases = new Float32Array(BASS_COUNT);
+const bassSpeeds = new Float32Array(BASS_COUNT * 3);
 
-const bokehGeometry = new THREE.BufferGeometry();
-const bokehPositions = new Float32Array(BOKEH_COUNT * 3);
-const bokehSizes = new Float32Array(BOKEH_COUNT);
-const bokehPhases = new Float32Array(BOKEH_COUNT);
-const bokehSpeeds = new Float32Array(BOKEH_COUNT * 3); // vx, vy, vz
-
-function initBokehParticles() {
-    for (let i = 0; i < BOKEH_COUNT; i++) {
-        bokehPositions[i * 3]     = (Math.random() - 0.5) * 120;
-        bokehPositions[i * 3 + 1] = (Math.random() - 0.5) * 80;
-        bokehPositions[i * 3 + 2] = (Math.random() - 0.5) * 40;
-        bokehSizes[i] = Math.random() * 4.0 + 1.0;
-        bokehPhases[i] = Math.random() * Math.PI * 2;
-        bokehSpeeds[i * 3]     = (Math.random() - 0.5) * 0.04;   // vx
-        bokehSpeeds[i * 3 + 1] = -(Math.random() * 0.06 + 0.01); // vy (drift up)
-        bokehSpeeds[i * 3 + 2] = 0; // vz (will be set by beats)
-    }
+for (let i = 0; i < BASS_COUNT; i++) {
+    // Anchored bottom-center: narrow X spread, low Y
+    bassPos[i * 3] = (Math.random() - 0.5) * 50;  // x: centered
+    bassPos[i * 3 + 1] = Math.random() * -25 - 5;      // y: bottom third
+    bassPos[i * 3 + 2] = (Math.random() - 0.5) * 20;
+    bassSizes[i] = Math.random() * 6.0 + 3.0;          // LARGE
+    bassPhases[i] = Math.random() * Math.PI * 2;
+    bassSpeeds[i * 3] = (Math.random() - 0.5) * 0.02;
+    bassSpeeds[i * 3 + 1] = (Math.random() - 0.5) * 0.015;
+    bassSpeeds[i * 3 + 2] = 0;
 }
-initBokehParticles();
 
-bokehGeometry.setAttribute('position', new THREE.BufferAttribute(bokehPositions, 3));
-bokehGeometry.setAttribute('aSize', new THREE.BufferAttribute(bokehSizes, 1));
-bokehGeometry.setAttribute('aPhase', new THREE.BufferAttribute(bokehPhases, 1));
+bassGeo.setAttribute('position', new THREE.BufferAttribute(bassPos, 3));
+bassGeo.setAttribute('aSize', new THREE.BufferAttribute(bassSizes, 1));
+bassGeo.setAttribute('aPhase', new THREE.BufferAttribute(bassPhases, 1));
 
-const bokehUniforms = {
+const bassUniforms = {
     uTime: { value: 0 },
     uColor: { value: currentColor.clone() },
-    uIntensity: { value: 0.5 },
-    uForge: { value: 1.0 },
-    uBassHit: { value: 0.0 },
+    uSubBass: { value: 0.0 },
+    uBass: { value: 0.0 },
     uBeatPunch: { value: 0.0 },
+    uForge: { value: 1.0 },
     uPixelRatio: { value: renderer.getPixelRatio() }
 };
 
-const bokehMaterial = new THREE.ShaderMaterial({
-    uniforms: bokehUniforms,
+const bassMat = new THREE.ShaderMaterial({
+    uniforms: bassUniforms,
     vertexShader: `
         attribute float aSize;
         attribute float aPhase;
         uniform float uTime;
-        uniform float uIntensity;
-        uniform float uBassHit;
+        uniform float uSubBass;
+        uniform float uBass;
         uniform float uBeatPunch;
         uniform float uPixelRatio;
         varying float vAlpha;
@@ -193,24 +191,117 @@ const bokehMaterial = new THREE.ShaderMaterial({
         void main() {
             vec3 pos = position;
 
-            // Oscillation
-            float phase = aPhase + uTime * 0.5;
-            pos.x += sin(phase) * 1.5;
-            pos.y += cos(phase * 0.7) * 0.8;
+            // Slow, heavy oscillation
+            float phase = aPhase + uTime * 0.3;
+            pos.x += sin(phase) * 2.0;
+            pos.y += cos(phase * 0.5) * 1.0;
 
-            // Z-AXIS PUNCH: particles blast toward camera on beat
-            pos.z += uBeatPunch * 15.0 * sin(aPhase * 3.0);
+            // Z-punch on beats: blast toward camera
+            pos.z += uBeatPunch * 20.0 * sin(aPhase * 2.0);
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
 
-            // Size: dramatically scales with bass
-            float bassScale = pow(uBassHit, 1.5) * 8.0;
-            float beatScale = uBeatPunch * 5.0;
-            float size = aSize * (1.0 + uIntensity * 2.0 + bassScale + beatScale);
-            gl_PointSize = size * uPixelRatio * (50.0 / -mvPosition.z);
+            // MASSIVE size scaling on bass
+            float bassScale = pow(uBass, 1.3) * 10.0;
+            float subScale = pow(uSubBass, 1.5) * 6.0;
+            float beatScale = uBeatPunch * 8.0;
+            float size = aSize * (1.0 + bassScale + subScale + beatScale);
+            gl_PointSize = size * uPixelRatio * (55.0 / -mvPosition.z);
 
-            // Brighter on hits
-            vAlpha = 0.12 + uIntensity * 0.2 + uBassHit * 0.5 + uBeatPunch * 0.3;
+            vAlpha = 0.15 + uBass * 0.6 + uBeatPunch * 0.4;
+
+            gl_Position = projectionMatrix * mvPosition;
+        }
+    `,
+    fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uForge;
+        varying float vAlpha;
+
+        void main() {
+            float d = length(gl_PointCoord - 0.5) * 2.0;
+            if (d > 1.0) discard;
+
+            // Soft, thick falloff — heavy feel
+            float alpha = pow(1.0 - d, 2.0) * vAlpha * uForge;
+
+            // Warmer tint for bass
+            vec3 col = uColor * 1.2 + vec3(0.08, 0.02, 0.0);
+            gl_FragColor = vec4(col, alpha);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+});
+
+const bassPoints = new THREE.Points(bassGeo, bassMat);
+bassPoints.renderOrder = 1;
+scene.add(bassPoints);
+
+// ============================================================
+// ZONE 2: MID PARTICLES — Center Field, Flowing Bokeh
+// Medium orbs, wider spread, driven by mids + vocals
+// ============================================================
+
+const MID_COUNT = 250;
+const midGeo = new THREE.BufferGeometry();
+const midPos = new Float32Array(MID_COUNT * 3);
+const midSizes = new Float32Array(MID_COUNT);
+const midPhases = new Float32Array(MID_COUNT);
+const midSpeeds = new Float32Array(MID_COUNT * 3);
+
+for (let i = 0; i < MID_COUNT; i++) {
+    midPos[i * 3] = (Math.random() - 0.5) * 110;   // wide x
+    midPos[i * 3 + 1] = (Math.random() - 0.5) * 50;    // centered y
+    midPos[i * 3 + 2] = (Math.random() - 0.5) * 30;
+    midSizes[i] = Math.random() * 3.0 + 1.0;
+    midPhases[i] = Math.random() * Math.PI * 2;
+    midSpeeds[i * 3] = (Math.random() - 0.5) * 0.04;
+    midSpeeds[i * 3 + 1] = -(Math.random() * 0.03 + 0.005); // gentle upward drift
+    midSpeeds[i * 3 + 2] = 0;
+}
+
+midGeo.setAttribute('position', new THREE.BufferAttribute(midPos, 3));
+midGeo.setAttribute('aSize', new THREE.BufferAttribute(midSizes, 1));
+midGeo.setAttribute('aPhase', new THREE.BufferAttribute(midPhases, 1));
+
+const midUniforms = {
+    uTime: { value: 0 },
+    uColor: { value: currentColor.clone() },
+    uMids: { value: 0.0 },
+    uBeatPunch: { value: 0.0 },
+    uForge: { value: 1.0 },
+    uPixelRatio: { value: renderer.getPixelRatio() }
+};
+
+const midMat = new THREE.ShaderMaterial({
+    uniforms: midUniforms,
+    vertexShader: `
+        attribute float aSize;
+        attribute float aPhase;
+        uniform float uTime;
+        uniform float uMids;
+        uniform float uBeatPunch;
+        uniform float uPixelRatio;
+        varying float vAlpha;
+
+        void main() {
+            vec3 pos = position;
+
+            // Flowing, organic motion
+            float phase = aPhase + uTime * 0.6;
+            pos.x += sin(phase * 1.1) * 3.0;
+            pos.y += cos(phase * 0.8) * 2.0;
+            pos.x += sin(uTime * 0.2 + aPhase) * 1.5; // drift
+
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+
+            float midScale = pow(uMids, 1.2) * 5.0;
+            float size = aSize * (1.0 + midScale + uBeatPunch * 2.0);
+            gl_PointSize = size * uPixelRatio * (48.0 / -mvPosition.z);
+
+            vAlpha = 0.1 + uMids * 0.45;
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -233,37 +324,43 @@ const bokehMaterial = new THREE.ShaderMaterial({
     blending: THREE.AdditiveBlending
 });
 
-const bokehPoints = new THREE.Points(bokehGeometry, bokehMaterial);
-bokehPoints.renderOrder = 1;
-scene.add(bokehPoints);
+const midPoints = new THREE.Points(midGeo, midMat);
+midPoints.renderOrder = 2;
+scene.add(midPoints);
 
 // ============================================================
-// LAYER 3: Foreground Sparkle
+// ZONE 3: HIGH PARTICLES — Upper Field + Edges, Crystalline Sparkle
+// Tiny, sharp, shimmering — hi-hats, air, brightness
 // ============================================================
 
-const SPARKLE_COUNT = 600;
+const HIGH_COUNT = 500;
+const highGeo = new THREE.BufferGeometry();
+const highPos = new Float32Array(HIGH_COUNT * 3);
+const highSizes = new Float32Array(HIGH_COUNT);
+const highPhases = new Float32Array(HIGH_COUNT);
 
-const sparkleGeometry = new THREE.BufferGeometry();
-const sparklePositions = new Float32Array(SPARKLE_COUNT * 3);
-const sparkleSizes = new Float32Array(SPARKLE_COUNT);
-const sparklePhases = new Float32Array(SPARKLE_COUNT);
-
-function initSparkleParticles() {
-    for (let i = 0; i < SPARKLE_COUNT; i++) {
-        sparklePositions[i * 3]     = (Math.random() - 0.5) * 140;
-        sparklePositions[i * 3 + 1] = (Math.random() - 0.5) * 100;
-        sparklePositions[i * 3 + 2] = (Math.random() - 0.5) * 20 + 5;
-        sparkleSizes[i] = Math.random() * 1.2 + 0.3;
-        sparklePhases[i] = Math.random() * Math.PI * 2;
+for (let i = 0; i < HIGH_COUNT; i++) {
+    // Biased toward top half and edges
+    const edge = Math.random() < 0.4;
+    if (edge) {
+        // Edge sparkle
+        highPos[i * 3] = (Math.random() < 0.5 ? -1 : 1) * (50 + Math.random() * 20);
+        highPos[i * 3 + 1] = (Math.random() - 0.3) * 70;
+    } else {
+        // Upper field
+        highPos[i * 3] = (Math.random() - 0.5) * 130;
+        highPos[i * 3 + 1] = Math.random() * 35 + 5; // upper half
     }
+    highPos[i * 3 + 2] = (Math.random() - 0.5) * 15 + 8;
+    highSizes[i] = Math.random() * 1.0 + 0.2;
+    highPhases[i] = Math.random() * Math.PI * 2;
 }
-initSparkleParticles();
 
-sparkleGeometry.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
-sparkleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sparkleSizes, 1));
-sparkleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(sparklePhases, 1));
+highGeo.setAttribute('position', new THREE.BufferAttribute(highPos, 3));
+highGeo.setAttribute('aSize', new THREE.BufferAttribute(highSizes, 1));
+highGeo.setAttribute('aPhase', new THREE.BufferAttribute(highPhases, 1));
 
-const sparkleUniforms = {
+const highUniforms = {
     uTime: { value: 0 },
     uHighs: { value: 0.0 },
     uBeatPunch: { value: 0.0 },
@@ -271,8 +368,8 @@ const sparkleUniforms = {
     uPixelRatio: { value: renderer.getPixelRatio() }
 };
 
-const sparkleMaterial = new THREE.ShaderMaterial({
-    uniforms: sparkleUniforms,
+const highMat = new THREE.ShaderMaterial({
+    uniforms: highUniforms,
     vertexShader: `
         attribute float aSize;
         attribute float aPhase;
@@ -285,14 +382,16 @@ const sparkleMaterial = new THREE.ShaderMaterial({
         void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
 
-            float twinkle = sin(aPhase + uTime * 2.5) * 0.5 + 0.5;
+            // Fast twinkle
+            float twinkle = sin(aPhase + uTime * 3.5) * 0.5 + 0.5;
 
-            // Sparkles EXPLODE on highs and beats
-            float highsPow = pow(uHighs, 1.5);
-            float size = aSize * (1.0 + highsPow * 6.0 + uBeatPunch * 3.0) * (0.4 + twinkle * 0.6);
-            gl_PointSize = size * uPixelRatio * (40.0 / -mvPosition.z);
+            // Sparkle POPS on highs
+            float highsPow = pow(uHighs, 1.3);
+            float size = aSize * (0.5 + twinkle * 0.5) * (1.0 + highsPow * 8.0 + uBeatPunch * 2.0);
+            gl_PointSize = size * uPixelRatio * (35.0 / -mvPosition.z);
 
-            vAlpha = twinkle * (0.2 + highsPow * 2.0 + uBeatPunch * 0.8);
+            // Sharp on/off feel for crystalline look
+            vAlpha = pow(twinkle, 2.0) * (0.15 + highsPow * 2.5);
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -305,8 +404,12 @@ const sparkleMaterial = new THREE.ShaderMaterial({
             float d = length(gl_PointCoord - 0.5) * 2.0;
             if (d > 1.0) discard;
 
-            float alpha = (1.0 - d) * vAlpha * uForge;
-            gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+            // Sharp falloff — crystalline, not soft
+            float alpha = pow(1.0 - d, 3.0) * vAlpha * uForge;
+
+            // Cool white with slight blue tint
+            vec3 col = vec3(0.9, 0.93, 1.0);
+            gl_FragColor = vec4(col, alpha);
         }
     `,
     transparent: true,
@@ -314,78 +417,83 @@ const sparkleMaterial = new THREE.ShaderMaterial({
     blending: THREE.AdditiveBlending
 });
 
-const sparklePoints = new THREE.Points(sparkleGeometry, sparkleMaterial);
-sparklePoints.renderOrder = 2;
-scene.add(sparklePoints);
+const highPoints = new THREE.Points(highGeo, highMat);
+highPoints.renderOrder = 3;
+scene.add(highPoints);
 
 // ============================================================
-// PARTICLE CPU-SIDE MOTION
+// PARTICLE CPU MOTION
 // ============================================================
 
-function updateBokehPositions(dt) {
-    const positions = bokehGeometry.attributes.position.array;
+function updateBassParticles() {
+    const p = bassGeo.attributes.position.array;
     const audio = window.audioData;
+    const chaos = 1.0 + (1.0 - forgeStage) * 2.0;
 
-    const chaosMultiplier = 1.0 + (1.0 - forgeStage) * 3.0;
-    const speedBase = intensity * 2.5 + 0.3;
+    for (let i = 0; i < BASS_COUNT; i++) {
+        const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
 
-    let speedMult = speedBase;
-    let beatSpeedBurst = 0;
+        // Slow, heavy movement
+        p[ix] += bassSpeeds[ix] * (1.0 + (audio.bass || 0) * 3.0) * chaos;
+        p[iy] += bassSpeeds[iy] * (1.0 + (audio.subBass || 0) * 2.0);
 
-    if (audio.isActive) {
-        // Mids drive base speed
-        speedMult += audio.mids * 5.0;
+        // Z decay
+        p[iz] *= 0.93;
 
-        // On beat: VIOLENT speed burst
-        if (audio.isBeat) {
-            beatSpeedBurst = audio.beatIntensity * 12.0;
+        // Beat punch: random particles blast forward
+        if (audio.isBeat && Math.random() < 0.35) {
+            p[iz] += (audio.beatIntensity || 0) * 10.0;
         }
+
+        // Keep anchored to bottom center
+        if (p[ix] < -30) p[ix] = 30;
+        if (p[ix] > 30) p[ix] = -30;
+        if (p[iy] < -35) p[iy] = -5;
+        if (p[iy] > 0) p[iy] = -25;
     }
+    bassGeo.attributes.position.needsUpdate = true;
+}
 
-    for (let i = 0; i < BOKEH_COUNT; i++) {
-        const ix = i * 3;
-        const iy = i * 3 + 1;
-        const iz = i * 3 + 2;
+function updateMidParticles() {
+    const p = midGeo.attributes.position.array;
+    const audio = window.audioData;
+    const chaos = 1.0 + (1.0 - forgeStage) * 3.0;
+    const speed = intensity * 2.0 + 0.3 + (audio.mids || 0) * 4.0;
 
-        // XY drift
-        positions[ix] += bokehSpeeds[ix] * (speedMult + beatSpeedBurst) * chaosMultiplier;
-        positions[iy] += bokehSpeeds[iy] * (speedMult + beatSpeedBurst * 0.5);
+    for (let i = 0; i < MID_COUNT; i++) {
+        const ix = i * 3, iy = i * 3 + 1;
 
-        // Z-axis: decay back to original position
-        positions[iz] *= 0.95;
-
-        // On beat: punch random particles toward camera
-        if (audio.isBeat && Math.random() < 0.3) {
-            positions[iz] += audio.beatIntensity * 8.0;
-        }
+        p[ix] += midSpeeds[ix] * speed * chaos;
+        p[iy] += midSpeeds[iy] * speed;
 
         // Wrap
-        if (positions[ix] < -65) positions[ix] = 65;
-        if (positions[ix] > 65) positions[ix] = -65;
-        if (positions[iy] < -45) {
-            positions[iy] = 45;
-            positions[ix] = (Math.random() - 0.5) * 120;
+        if (p[ix] < -60) p[ix] = 60;
+        if (p[ix] > 60) p[ix] = -60;
+        if (p[iy] < -30) {
+            p[iy] = 30;
+            p[ix] = (Math.random() - 0.5) * 110;
         }
     }
-
-    bokehGeometry.attributes.position.needsUpdate = true;
+    midGeo.attributes.position.needsUpdate = true;
 }
 
 // ============================================================
-// CATALOG INIT
+// CATALOG
 // ============================================================
 
 function setTrack(index) {
     const track = window.allLoveCatalog[index];
     if (!track) return;
-
     targetColor.set(track.synHex || '#2d3142');
     intensity = track.intensity || 0.5;
-    intensitySlider.value = Math.round(intensity * 100);
-    hexDisplay.textContent = track.synHex || '#2d3142';
+
+    const el = document.getElementById('intensitySlider');
+    if (el) el.value = Math.round(intensity * 100);
+
+    const hex = document.getElementById('hexDisplay');
+    if (hex) hex.textContent = track.synHex || '#2d3142';
     document.documentElement.style.setProperty('--accent-color', track.synHex || '#47e6a6');
 
-    // If track has an audio URL, play it!
     if (track.audioUrl && typeof window.playCatalogTrack === 'function') {
         window.playCatalogTrack(track.audioUrl);
     }
@@ -393,12 +501,13 @@ function setTrack(index) {
 window.setTrack = setTrack;
 
 function populateCatalog() {
-    if (typeof window.allLoveCatalog === 'undefined') return;
+    const sel = document.getElementById('trackSelector');
+    if (!sel || typeof window.allLoveCatalog === 'undefined') return;
     window.allLoveCatalog.forEach((track, index) => {
-        const option = document.createElement('option');
-        option.value = index;
-        option.textContent = `${track.trackNumber}. ${track.title} [${track.key}]`;
-        trackSelector.appendChild(option);
+        const opt = document.createElement('option');
+        opt.value = index;
+        opt.textContent = `${track.trackNumber}. ${track.title} [${track.key}]`;
+        sel.appendChild(opt);
     });
     setTrack(0);
 }
@@ -416,170 +525,182 @@ function animate() {
 
     const dt = clock.getDelta();
     const elapsed = clock.getElapsedTime();
-    const audio = window.audioData;
+    const audio = window.audioData || {};
 
-    // --- Color lerp ---
+    // Color lerp
     currentColor.lerp(targetColor, 0.04);
 
-    // --- Audio-reactive values ---
-    // Default (catalog with no audio): gentle breathing
-    let pulse = Math.sin(elapsed * 0.5) * 0.15 * intensity;
-    let shakeX = 0, shakeY = 0;
-    let bassHit = 0;
-    let highsVal = 0;
-    let beatPunch = 0;
+    // Audio values (default to idle breathing)
+    let subBass = 0, bass = 0, mids = 0, highs = 0;
 
     if (audio.isActive) {
-        // USE RAW VALUES for immediate, violent response
-        const rawSub = audio.rawSubBass;
-        const rawBass = audio.rawBass;
+        subBass = audio.rawSubBass || 0;
+        bass = audio.rawBass || 0;
+        mids = audio.mids || 0;
+        highs = audio.highs || 0;
 
-        // Pulse: CUBIC response curve — quiet audio barely moves it, loud audio SLAMS it
-        pulse = Math.pow(rawSub, 2.0) * 1.5 + Math.pow(rawBass, 2.0) * 0.8;
-
-        // Shake: proportional to sub-bass (camera shake feel)
-        shakeX = rawSub * 0.025 * Math.sin(elapsed * 18);
-        shakeY = rawSub * 0.025 * Math.cos(elapsed * 18);
-
-        // Bass hit for particle size
-        bassHit = Math.pow(rawBass, 1.5);
-
-        // Highs for sparkle (use smoothed for less jitter on highs)
-        highsVal = audio.highs;
-
-        // Beat detection → flash + punch
         if (audio.isBeat) {
             beatFlashDecay = audio.beatIntensity;
             beatPunchDecay = audio.beatIntensity;
         }
-    }
-
-    // Decay beat effects
-    beatFlashDecay *= 0.82; // fast decay = punchy
-    beatPunchDecay *= 0.85;
-    beatPunch = beatPunchDecay;
-
-    // --- BLOOM: driven by beat intensity, not lagging energy ---
-    if (audio.isActive) {
-        bloomPass.strength = 0.4 + beatPunchDecay * 2.5 + audio.bass * 0.8;
     } else {
-        bloomPass.strength = 0.4 + intensity * 0.4;
+        // Idle breathing
+        subBass = Math.sin(elapsed * 0.5) * 0.08 * intensity;
+        mids = Math.sin(elapsed * 0.7) * 0.05 * intensity;
     }
-    bloomPass.strength *= forgeStage;
 
-    // --- Update Layer 1: Wash ---
+    beatFlashDecay *= 0.82;
+    beatPunchDecay *= 0.85;
+
+    // --- Bloom: beat-driven ---
+    bloomPass.strength = audio.isActive
+        ? (0.3 + beatPunchDecay * 2.8 + bass * 0.6) * forgeStage
+        : (0.3 + intensity * 0.3) * forgeStage;
+
+    // --- Wash ---
     washUniforms.uTime.value = elapsed;
     washUniforms.uColor.value.copy(currentColor);
-    washUniforms.uPulse.value = pulse;
-    washUniforms.uShake.value.set(shakeX, shakeY);
-    washUniforms.uForge.value = forgeStage;
+    washUniforms.uSubBass.value = subBass;
+    washUniforms.uBass.value = bass;
+    washUniforms.uMids.value = mids;
+    washUniforms.uHighs.value = highs;
     washUniforms.uBeatFlash.value = beatFlashDecay;
+    washUniforms.uForge.value = forgeStage;
 
-    // --- Update Layer 2: Bokeh ---
-    updateBokehPositions(dt);
-    bokehUniforms.uTime.value = elapsed;
-    bokehUniforms.uColor.value.copy(currentColor);
-    bokehUniforms.uIntensity.value = intensity;
-    bokehUniforms.uForge.value = forgeStage;
-    bokehUniforms.uBassHit.value = bassHit;
-    bokehUniforms.uBeatPunch.value = beatPunch;
+    // --- Bass zone ---
+    updateBassParticles();
+    bassUniforms.uTime.value = elapsed;
+    bassUniforms.uColor.value.copy(currentColor);
+    bassUniforms.uSubBass.value = subBass;
+    bassUniforms.uBass.value = bass;
+    bassUniforms.uBeatPunch.value = beatPunchDecay;
+    bassUniforms.uForge.value = forgeStage;
 
-    // --- Update Layer 3: Sparkle ---
-    sparkleUniforms.uTime.value = elapsed;
-    sparkleUniforms.uHighs.value = highsVal;
-    sparkleUniforms.uBeatPunch.value = beatPunch;
-    sparkleUniforms.uForge.value = forgeStage;
+    // --- Mid zone ---
+    updateMidParticles();
+    midUniforms.uTime.value = elapsed;
+    midUniforms.uColor.value.copy(currentColor);
+    midUniforms.uMids.value = mids;
+    midUniforms.uBeatPunch.value = beatPunchDecay;
+    midUniforms.uForge.value = forgeStage;
 
-    // --- Render ---
+    // --- High zone ---
+    highUniforms.uTime.value = elapsed;
+    highUniforms.uHighs.value = highs;
+    highUniforms.uBeatPunch.value = beatPunchDecay;
+    highUniforms.uForge.value = forgeStage;
+
+    // Render
     composer.render();
 }
 
 // ============================================================
-// EVENT LISTENERS
+// PANEL CONTROL (hidden by default, slide-in)
 // ============================================================
 
-trackSelector.addEventListener('change', (e) => {
-    if (currentMode === 'catalog') setTrack(e.target.value);
-});
+function setupPanel() {
+    const panel = document.getElementById('controlPanel');
+    const hint = document.getElementById('panelHint');
+    if (!panel) return;
 
-intensitySlider.addEventListener('input', (e) => {
-    intensity = e.target.value / 100;
-    window.intensity = intensity;
-});
+    let panelOpen = false;
 
-forgeSlider.addEventListener('input', (e) => {
-    forgeStage = e.target.value / 100;
-    window.forgeStage = forgeStage;
-});
-
-modeCatalogBtn.addEventListener('click', () => {
-    currentMode = 'catalog';
-    window.currentMode = 'catalog';
-    modeCatalogBtn.classList.add('active');
-    modeLiveBtn.classList.remove('active');
-
-    catalogControls.style.opacity = '0';
-    liveAudioControls.classList.add('hidden');
-    catalogControls.classList.remove('hidden');
-    requestAnimationFrame(() => {
-        catalogControls.style.transition = 'opacity 0.4s ease';
-        catalogControls.style.opacity = '1';
-    });
-});
-
-modeLiveBtn.addEventListener('click', () => {
-    currentMode = 'live';
-    window.currentMode = 'live';
-    modeLiveBtn.classList.add('active');
-    modeCatalogBtn.classList.remove('active');
-
-    // Stop catalog audio
-    if (typeof window.stopCatalogTrack === 'function') {
-        window.stopCatalogTrack();
+    function togglePanel(open) {
+        panelOpen = typeof open === 'boolean' ? open : !panelOpen;
+        panel.classList.toggle('panel-visible', panelOpen);
+        if (hint) hint.style.opacity = panelOpen ? '0' : '';
     }
 
-    liveAudioControls.style.opacity = '0';
-    catalogControls.classList.add('hidden');
-    liveAudioControls.classList.remove('hidden');
-    requestAnimationFrame(() => {
-        liveAudioControls.style.transition = 'opacity 0.4s ease';
-        liveAudioControls.style.opacity = '1';
-    });
-});
-
-// Stage Mode
-document.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'f') {
-        const overlay = document.querySelector('.ui-overlay');
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(err => {
-                console.error('Fullscreen error:', err.message);
-            });
-            overlay.style.transition = 'opacity 0.5s ease';
-            overlay.style.opacity = '0';
-            setTimeout(() => overlay.classList.add('hidden'), 500);
-        } else {
-            document.exitFullscreen();
+    // Tab key toggles
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            togglePanel();
         }
-    }
-});
+        // F for true fullscreen
+        if (e.key.toLowerCase() === 'f' && !panelOpen) {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => { });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        // Escape closes panel
+        if (e.key === 'Escape' && panelOpen) {
+            togglePanel(false);
+        }
+    });
 
-document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) {
-        const overlay = document.querySelector('.ui-overlay');
-        overlay.classList.remove('hidden');
-        overlay.style.opacity = '0';
-        requestAnimationFrame(() => {
-            overlay.style.transition = 'opacity 0.5s ease';
-            overlay.style.opacity = '1';
-        });
-    }
-});
+    // Mouse hover left edge opens
+    document.addEventListener('mousemove', (e) => {
+        if (e.clientX < 8 && !panelOpen) {
+            togglePanel(true);
+        }
+    });
 
-// Resize
+    // Click outside closes
+    document.addEventListener('click', (e) => {
+        if (panelOpen && !panel.contains(e.target) && e.target !== hint) {
+            togglePanel(false);
+        }
+    });
+
+    // Fade hint after 4 seconds
+    if (hint) {
+        setTimeout(() => {
+            hint.classList.add('hint-fade');
+        }, 4000);
+    }
+
+    // Wire up controls
+    const trackSel = document.getElementById('trackSelector');
+    const intensityEl = document.getElementById('intensitySlider');
+    const forgeEl = document.getElementById('forgeSlider');
+    const catBtn = document.getElementById('modeCatalogBtn');
+    const liveBtn = document.getElementById('modeLiveBtn');
+    const catControls = document.getElementById('catalogControls');
+    const liveControls = document.getElementById('liveAudioControls');
+
+    if (trackSel) trackSel.addEventListener('change', (e) => {
+        if (currentMode === 'catalog') setTrack(e.target.value);
+    });
+
+    if (intensityEl) intensityEl.addEventListener('input', (e) => {
+        intensity = e.target.value / 100;
+        window.intensity = intensity;
+    });
+
+    if (forgeEl) forgeEl.addEventListener('input', (e) => {
+        forgeStage = e.target.value / 100;
+        window.forgeStage = forgeStage;
+    });
+
+    if (catBtn) catBtn.addEventListener('click', () => {
+        currentMode = 'catalog';
+        window.currentMode = 'catalog';
+        catBtn.classList.add('active');
+        if (liveBtn) liveBtn.classList.remove('active');
+        if (catControls) catControls.classList.remove('hidden');
+        if (liveControls) liveControls.classList.add('hidden');
+    });
+
+    if (liveBtn) liveBtn.addEventListener('click', () => {
+        currentMode = 'live';
+        window.currentMode = 'live';
+        liveBtn.classList.add('active');
+        if (catBtn) catBtn.classList.remove('active');
+        if (liveControls) liveControls.classList.remove('hidden');
+        if (catControls) catControls.classList.add('hidden');
+        if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
+    });
+}
+
+// ============================================================
+// RESIZE
+// ============================================================
+
 window.addEventListener('resize', () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
@@ -592,4 +713,5 @@ window.addEventListener('resize', () => {
 // ============================================================
 
 populateCatalog();
+setupPanel();
 animate();

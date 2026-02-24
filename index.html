@@ -8,11 +8,8 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
 
-    <!-- Three.js Import Map -->
     <script type="importmap">
     {
         "imports": {
@@ -24,108 +21,107 @@
 </head>
 
 <body>
-    <!-- WebGL renderer replaces this canvas -->
+    <!-- WebGL fills the screen — this IS the experience -->
     <canvas id="visualizerCanvas"></canvas>
 
     <!-- Hidden audio element for catalog playback -->
     <audio id="catalogAudioPlayer" crossorigin="anonymous"></audio>
 
-    <div class="ui-overlay">
-        <header>
-            <h1 class="brand">Synesthesia <span class="accent">Visualizer</span></h1>
-            <p class="subtitle">Cloud State // Immersive Audio-Visual Experience</p>
-        </header>
+    <!-- Subtle hint that fades away -->
+    <div id="panelHint" class="panel-hint">
+        <span class="hint-key">TAB</span> controls
+    </div>
 
-        <div class="controls-container">
+    <!-- ================================================
+         CONTROL PANEL — Hidden by default, slides in from left
+         ================================================ -->
+    <div id="controlPanel" class="control-panel">
+        <div class="panel-inner">
+            <div class="panel-header">
+                <h2 class="panel-title">Synesthesia <span class="accent">Visualizer</span></h2>
+                <p class="panel-sub">Cloud State</p>
+            </div>
+
             <!-- Mode Toggles -->
             <div class="mode-toggles">
                 <button id="modeCatalogBtn" class="glass-btn active">Catalog</button>
                 <button id="modeLiveBtn" class="glass-btn">Live Audio</button>
             </div>
 
-            <!-- Catalog Mode Controls -->
-            <div id="catalogControls" class="control-group active-group">
+            <!-- Catalog Controls -->
+            <div id="catalogControls" class="control-group">
                 <label for="trackSelector">Select Track</label>
                 <select id="trackSelector" class="glass-select"></select>
                 <div id="catalogPlaybackStatus" class="playback-status"></div>
             </div>
 
-            <!-- Live Audio Mode Controls -->
+            <!-- Live Audio Controls -->
             <div id="liveAudioControls" class="control-group hidden">
                 <label>Audio Source</label>
                 <div class="radio-group">
                     <input type="radio" id="srcFile" name="audioSrc" value="file" checked>
-                    <label for="srcFile">File Upload</label>
+                    <label for="srcFile">File</label>
                     <input type="radio" id="srcMic" name="audioSrc" value="mic">
-                    <label for="srcMic">Microphone</label>
+                    <label for="srcMic">Mic</label>
                 </div>
-                <div class="file-upload-wrapper mt-2">
+                <div class="file-upload-wrapper">
                     <label for="audioFileUpload" class="glass-btn upload-btn">Choose Audio File</label>
-                    <input type="file" id="audioFileUpload" accept="audio/*" style="display: none;">
+                    <input type="file" id="audioFileUpload" accept="audio/*" style="display:none;">
                     <div id="uploadFileName" class="upload-filename"></div>
                 </div>
-
-                <!-- Beat Detection Readout -->
-                <div class="beat-readout mt-2">
+                <div class="beat-readout">
                     <span class="beat-dot" id="beatDot"></span>
                     <span id="bpmDisplay" class="bpm-value">— BPM</span>
                 </div>
             </div>
 
-            <!-- Global Controls -->
-            <div class="info-panel glass-card">
-                <div class="info-item">
-                    <span class="label">Current Hex</span>
-                    <span id="hexDisplay" class="value">#2d3142</span>
+            <!-- Parameters -->
+            <div class="param-section">
+                <div class="param-row">
+                    <span class="param-label">Hex</span>
+                    <span id="hexDisplay" class="param-value">#2d3142</span>
                 </div>
-
-                <div class="info-item title-row mt-3">
-                    <span class="label">Production Stage (The Forge)</span>
-                </div>
-                <div class="info-item">
+                <div class="param-row">
+                    <span class="param-label">Forge</span>
                     <input type="range" id="forgeSlider" min="0" max="100" value="100" class="glass-range">
                 </div>
-
-                <div class="info-item title-row mt-2">
-                    <span class="label">Base Intensity</span>
-                </div>
-                <div class="info-item">
+                <div class="param-row">
+                    <span class="param-label">Intensity</span>
                     <input type="range" id="intensitySlider" min="1" max="100" value="50" class="glass-range">
                 </div>
             </div>
 
-            <!-- MIDI Section -->
-            <div class="glass-card midi-panel">
-                <div class="info-item">
-                    <span class="label">MIDI Controller</span>
-                    <span id="midiStatus" class="midi-status">MIDI: Searching...</span>
+            <!-- MIDI -->
+            <div class="param-section midi-section">
+                <div class="param-row">
+                    <span class="param-label">MIDI</span>
+                    <span id="midiStatus" class="midi-status">Searching...</span>
                 </div>
                 <div id="midiLearnContainer" class="midi-learn-grid"></div>
             </div>
-        </div>
 
-        <footer>
-            <p>&copy; 2026 Ethan Payton // All Love</p>
-            <p class="footer-hint">Press <kbd>F</kbd> for Stage Mode</p>
-        </footer>
+            <div class="panel-footer">
+                <span class="footer-hint"><span class="hint-key">F</span> fullscreen · <span class="hint-key">TAB</span> hide</span>
+            </div>
+        </div>
     </div>
 
-    <!-- Non-module scripts (set globals before module runs) -->
+    <!-- Watermark (visible in immersive mode) -->
+    <div class="watermark">
+        <span>Cloud State</span>
+    </div>
+
     <script src="catalog.js"></script>
     <script src="audio.js"></script>
     <script src="midi.js"></script>
-
-    <!-- WebGL visualizer (ES module) -->
     <script type="module" src="visualizer.js"></script>
 
-    <!-- Beat dot + BPM readout animation -->
     <script>
         (function updateBeatUI() {
             const dot = document.getElementById('beatDot');
             const bpmEl = document.getElementById('bpmDisplay');
             const statusEl = document.getElementById('catalogPlaybackStatus');
             const audio = window.audioData;
-
             if (audio && audio.isActive) {
                 if (audio.isBeat && dot) {
                     dot.classList.add('flash');

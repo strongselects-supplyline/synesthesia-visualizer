@@ -1,20 +1,21 @@
 /* ============================================================
-   Synesthesia Visualizer — Style v2.0
-   Glassmorphism + MIDI Learn + Beat Readout + Smooth Transitions
+   Synesthesia Visualizer — Style v3.0 "Front of House"
+   Immersive default + slide-in panel + glassmorphism
    ============================================================ */
 
 :root {
-    --bg-dark: #061014;
+    --bg-dark: #030810;
     --text-primary: rgba(255, 255, 255, 0.92);
-    --text-muted: rgba(255, 255, 255, 0.55);
+    --text-muted: rgba(255, 255, 255, 0.50);
     --accent-color: #47e6a6;
     --accent-glow: rgba(71, 230, 166, 0.25);
     --glass-bg: rgba(255, 255, 255, 0.04);
     --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-blur: blur(20px);
+    --glass-blur: blur(24px);
+    --panel-width: 340px;
     --font-main: 'Inter', sans-serif;
     --font-heading: 'Outfit', sans-serif;
-    --transition-smooth: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --ease-out: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 * {
@@ -24,19 +25,19 @@
 }
 
 body {
-    background-color: var(--bg-dark);
+    background: var(--bg-dark);
     color: var(--text-primary);
     font-family: var(--font-main);
     height: 100vh;
     overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
-/* Canvas / WebGL container */
+/* ============================================================
+   CANVAS — Full bleed
+   ============================================================ */
+
 #visualizerCanvas {
-    position: absolute;
+    position: fixed;
     top: 0;
     left: 0;
     width: 100%;
@@ -45,209 +46,152 @@ body {
 }
 
 /* ============================================================
-   UI OVERLAY
+   PANEL HINT — Fades after 4s
    ============================================================ */
 
-.ui-overlay {
-    position: relative;
-    z-index: 10;
-    width: 100%;
-    height: 100%;
+.panel-hint {
+    position: fixed;
+    bottom: 32px;
+    left: 32px;
+    z-index: 100;
+    font-family: var(--font-main);
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
     display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 40px;
+    align-items: center;
+    gap: 8px;
+    transition: opacity 1.2s ease;
     pointer-events: none;
-    transition: opacity 0.5s ease;
 }
 
-.ui-overlay > * {
-    pointer-events: auto;
+.panel-hint.hint-fade {
+    opacity: 0;
+}
+
+.hint-key {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 5px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: rgba(255, 255, 255, 0.7);
 }
 
 /* ============================================================
-   HEADER
+   CONTROL PANEL — Slide in from left
    ============================================================ */
 
-header {
-    text-align: left;
+.control-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--panel-width);
+    height: 100vh;
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.45s var(--ease-out);
+    pointer-events: none;
 }
 
-.brand {
+.control-panel.panel-visible {
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+.panel-inner {
+    width: 100%;
+    height: 100%;
+    background: rgba(6, 12, 20, 0.88);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 32px 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    /* Scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.panel-inner::-webkit-scrollbar {
+    width: 4px;
+}
+
+.panel-inner::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+}
+
+/* --- Panel Header --- */
+
+.panel-header {
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.panel-title {
     font-family: var(--font-heading);
-    font-size: 2.5rem;
+    font-size: 1.6rem;
     font-weight: 700;
-    letter-spacing: -1px;
-    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+    margin-bottom: 4px;
 }
 
-.brand .accent {
+.panel-title .accent {
     color: var(--accent-color);
     font-weight: 300;
 }
 
-.subtitle {
-    font-size: 0.85rem;
+.panel-sub {
+    font-size: 0.7rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 2.5px;
 }
 
+/* --- Panel Footer --- */
+
+.panel-footer {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.footer-hint {
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 1px;
+}
+
 /* ============================================================
-   CONTROLS
+   MODE TOGGLES
    ============================================================ */
-
-.controls-container {
-    max-width: 400px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-}
-
-.control-group {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    transition: opacity var(--transition-smooth);
-}
-
-.control-group label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-/* --- Glass Select --- */
-
-.glass-select {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    color: white;
-    padding: 12px 16px;
-    border-radius: 12px;
-    font-family: var(--font-main);
-    font-size: 0.95rem;
-    outline: none;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 6L11 1' stroke='rgba(255,255,255,0.5)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 16px center;
-    padding-right: 40px;
-}
-
-.glass-select:focus {
-    border-color: var(--accent-color);
-    box-shadow: 0 0 20px var(--accent-glow);
-}
-
-.glass-select option {
-    background: #0d1b22;
-    color: white;
-}
-
-/* --- Glass Card --- */
-
-.glass-card {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    padding: 20px;
-    border-radius: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.info-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.info-item .label {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.info-item .value {
-    font-family: 'Courier New', monospace;
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--accent-color);
-}
-
-/* --- Glass Range Slider (polished) --- */
-
-.glass-range {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 55%;
-    background: rgba(255, 255, 255, 0.08);
-    height: 3px;
-    border-radius: 2px;
-    outline: none;
-    transition: background 0.3s ease;
-}
-
-.glass-range:hover {
-    background: rgba(255, 255, 255, 0.14);
-}
-
-.glass-range::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 14px;
-    height: 14px;
-    background: var(--accent-color);
-    border-radius: 50%;
-    cursor: pointer;
-    box-shadow: 0 0 8px var(--accent-glow), 0 0 20px rgba(71, 230, 166, 0.15);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.glass-range::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
-    box-shadow: 0 0 12px var(--accent-glow), 0 0 30px rgba(71, 230, 166, 0.2);
-}
-
-.glass-range::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    background: var(--accent-color);
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-}
-
-/* --- Mode Toggles --- */
 
 .mode-toggles {
     display: flex;
     gap: 8px;
-    margin-bottom: 4px;
 }
 
 .glass-btn {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
     color: var(--text-muted);
-    padding: 10px 18px;
+    padding: 9px 14px;
     border-radius: 10px;
     font-family: var(--font-main);
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.25s ease;
     flex: 1;
     text-align: center;
 }
@@ -261,37 +205,137 @@ header {
     color: white;
     border-color: var(--accent-color);
     background: rgba(71, 230, 166, 0.08);
-    box-shadow: 0 0 15px rgba(71, 230, 166, 0.1);
+    box-shadow: 0 0 12px rgba(71, 230, 166, 0.08);
 }
 
-/* --- Upload Button --- */
+/* ============================================================
+   CONTROL GROUPS
+   ============================================================ */
 
-.upload-btn {
-    display: block;
-    border: 1px dashed rgba(255, 255, 255, 0.2);
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.control-group label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* --- Glass Select --- */
+
+.glass-select {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
     transition: all 0.3s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 6L11 1' stroke='rgba(255,255,255,0.5)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
 }
 
-.upload-btn:hover {
+.glass-select:focus {
     border-color: var(--accent-color);
-    background: rgba(71, 230, 166, 0.05);
+    box-shadow: 0 0 16px var(--accent-glow);
 }
 
-.upload-filename {
-    font-size: 0.72rem;
+.glass-select option {
+    background: #0d1b22;
+    color: white;
+}
+
+/* ============================================================
+   PARAMETER SECTION
+   ============================================================ */
+
+.param-section {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.param-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.param-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.param-value {
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    font-size: 0.82rem;
     color: var(--accent-color);
-    text-align: center;
-    min-height: 14px;
-    margin-top: 6px;
-    opacity: 0.8;
 }
 
-/* --- Radio Group --- */
+/* --- Glass Range Slider --- */
+
+.glass-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 55%;
+    background: rgba(255, 255, 255, 0.08);
+    height: 3px;
+    border-radius: 2px;
+    outline: none;
+}
+
+.glass-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 13px;
+    height: 13px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 8px var(--accent-glow);
+    transition: transform 0.2s ease;
+}
+
+.glass-range::-webkit-slider-thumb:hover {
+    transform: scale(1.25);
+    box-shadow: 0 0 14px var(--accent-glow);
+}
+
+.glass-range::-moz-range-thumb {
+    width: 13px;
+    height: 13px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+/* ============================================================
+   RADIO GROUP
+   ============================================================ */
 
 .radio-group {
     display: flex;
     gap: 14px;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
     color: var(--text-primary);
     align-items: center;
 }
@@ -300,16 +344,29 @@ header {
     accent-color: var(--accent-color);
 }
 
-/* --- Dividers --- */
+/* ============================================================
+   FILE UPLOAD
+   ============================================================ */
 
-.title-row {
-    margin-top: 8px;
-    border-top: 1px solid var(--glass-border);
-    padding-top: 12px;
+.upload-btn {
+    display: block;
+    border: 1px dashed rgba(255, 255, 255, 0.18);
+    transition: all 0.25s ease;
 }
 
-.mt-3 { margin-top: 15px; }
-.mt-2 { margin-top: 6px; }
+.upload-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(71, 230, 166, 0.05);
+}
+
+.upload-filename {
+    font-size: 0.68rem;
+    color: var(--accent-color);
+    text-align: center;
+    min-height: 14px;
+    margin-top: 4px;
+    opacity: 0.8;
+}
 
 /* ============================================================
    BEAT READOUT
@@ -319,14 +376,14 @@ header {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 0;
+    padding: 6px 0;
 }
 
 .beat-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.12);
     transition: background 0.08s ease, box-shadow 0.08s ease;
 }
 
@@ -337,22 +394,39 @@ header {
 
 .bpm-value {
     font-family: 'Courier New', monospace;
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
 }
 
 /* ============================================================
-   MIDI PANEL + MIDI LEARN
+   PLAYBACK STATUS
    ============================================================ */
 
-.midi-panel {
-    padding: 16px 20px;
+.playback-status {
+    font-family: 'Courier New', monospace;
+    font-size: 0.68rem;
+    color: var(--accent-color);
+    letter-spacing: 1px;
+    height: 14px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+/* ============================================================
+   MIDI SECTION
+   ============================================================ */
+
+.midi-section {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.04);
+    border-radius: 12px;
+    padding: 14px 16px;
 }
 
 .midi-status {
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: var(--text-muted);
     font-family: 'Courier New', monospace;
     text-transform: uppercase;
@@ -366,15 +440,15 @@ header {
 .midi-learn-grid {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     margin-top: 8px;
 }
 
 .midi-learn-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 0;
+    gap: 8px;
+    padding: 4px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
 
@@ -384,7 +458,7 @@ header {
 
 .midi-learn-label {
     flex: 1;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -392,17 +466,17 @@ header {
 
 .midi-learn-cc {
     font-family: 'Courier New', monospace;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     color: var(--text-primary);
-    min-width: 42px;
+    min-width: 40px;
     text-align: center;
     transition: color 0.15s ease;
 }
 
 .midi-learn-btn {
     flex: 0 0 auto;
-    padding: 4px 12px;
-    font-size: 0.68rem;
+    padding: 3px 10px;
+    font-size: 0.64rem;
     border-radius: 6px;
 }
 
@@ -419,43 +493,24 @@ header {
 }
 
 /* ============================================================
-   CATALOG PLAYBACK STATUS
+   WATERMARK — Bottom right, always visible in immersive mode
    ============================================================ */
 
-.playback-status {
-    font-family: 'Courier New', monospace;
-    font-size: 0.72rem;
-    color: var(--accent-color);
-    letter-spacing: 1px;
-    height: 16px;
-    opacity: 0;
-    transition: opacity 0.3s ease;
+.watermark {
+    position: fixed;
+    bottom: 28px;
+    right: 32px;
+    z-index: 5;
+    pointer-events: none;
 }
 
-/* ============================================================
-   FOOTER
-   ============================================================ */
-
-footer {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    letter-spacing: 1px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.footer-hint {
-    opacity: 0.5;
-}
-
-.footer-hint kbd {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-    padding: 2px 6px;
-    font-family: var(--font-main);
-    font-size: 0.68rem;
+.watermark span {
+    font-family: var(--font-heading);
+    font-size: 0.82rem;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.12);
+    letter-spacing: 3px;
+    text-transform: uppercase;
 }
 
 /* ============================================================
@@ -470,26 +525,16 @@ footer {
    RESPONSIVE
    ============================================================ */
 
-@media (max-width: 768px) {
-    .ui-overlay {
-        padding: 20px;
+@media (max-width: 600px) {
+    .control-panel {
+        width: 100vw;
     }
 
-    .brand {
-        font-size: 1.8rem;
+    .panel-inner {
+        padding: 24px 18px 16px;
     }
 
-    .controls-container {
-        max-width: 100%;
-    }
-
-    .glass-range {
-        width: 50%;
-    }
-
-    footer {
-        flex-direction: column;
-        gap: 4px;
-        align-items: flex-start;
+    .panel-title {
+        font-size: 1.3rem;
     }
 }
