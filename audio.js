@@ -95,9 +95,12 @@ const LOCK_THRESHOLD = 0.45;     // lock in when a key has 45% of all votes
 const OVERTURN_THRESHOLD = 0.50; // once locked, need 50% from a different key to change
 const VOTE_DECAY = 0.99;         // aggressive decay — only last ~1-2 seconds matter
 
-// Krumhansl-Schmuckler key profiles
-const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+// Key profiles optimized for pop/electronic music
+// Heavily weighted toward tonic (10) and dominant/fifth (7)
+// Clear zeros on non-scale tones for sharper key discrimination
+// Format: [1, b2, 2, b3, 3, 4, b5, 5, b6, 6, b7, 7]
+const MAJOR_PROFILE = [10.0, 0.0, 3.0, 0.0, 5.0, 3.5, 0.0, 7.0, 0.0, 2.5, 0.0, 2.0];
+const MINOR_PROFILE = [10.0, 0.0, 2.5, 5.0, 0.0, 3.5, 0.0, 7.0, 3.0, 0.0, 2.5, 0.0];
 const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 // Synesthesia hex map (mirrors catalog.js)
