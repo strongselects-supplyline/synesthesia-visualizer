@@ -99,47 +99,59 @@ const washMaterial = new THREE.ShaderMaterial({
             float x = vUv.x;
             float centerX = abs(x - 0.5) * 2.0;
 
-            // === BASS ZONE — SHAPE MORPHS WITH EVOLUTION ===
-            // Evolution shifts the squash factor: building = taller/wider, dropping = tighter
-            float bassSquash = 1.8 - uEvoBass * 0.5;  // 1.3 (tall) to 2.3 (flat)
-            float bassWobble = sin(uTime * 0.8 + x * 3.0) * (0.04 + uSongPhase * 0.03);
+            // Slow background breathing wave — the whole scene gently pulses
+            float breathe = sin(uTime * 0.15) * 0.3 + 0.7;
+            bg *= breathe;
+
+            // === BASS ZONE — FLOWING, ORGANIC SHAPE ===
+            float bassSquash = 1.8 - uEvoBass * 0.5;
+            // Layered sine waves create flowing, aurora-like motion
+            float wave1 = sin(uTime * 0.4 + x * 3.0) * 0.06;
+            float wave2 = sin(uTime * 0.25 + x * 5.0 + 1.5) * 0.04;
+            float wave3 = sin(uTime * 0.6 + x * 2.0 + y * 3.0) * 0.03;
+            float bassWobble = wave1 + wave2 + wave3 + uSongPhase * 0.03;
             float bassRadius = 0.35 + pow(uSubBass, 1.5) * 0.55 + bassWobble;
-            // Evolution widens the bass zone during buildups
             bassRadius += uEvoBass * 0.15;
 
-            // Asymmetric distortion: sine wave modulated by evolution
-            float distortX = x - 0.5 + sin(y * 4.0 + uTime * 0.3) * uEvoBass * 0.05;
+            // Flowing horizontal distortion — bass zone sways like water
+            float flowX = sin(y * 3.0 + uTime * 0.3) * 0.08 + sin(y * 7.0 + uTime * 0.5) * 0.03;
+            float distortX = x - 0.5 + flowX * (0.5 + uEvoBass * 0.5);
             float bassDist = length(vec2(distortX, y * bassSquash));
             float bassGlow = 1.0 - smoothstep(0.0, bassRadius, bassDist);
-            bassGlow = pow(bassGlow, 1.8 - uSongPhase * 0.3); // softer at peak energy
+            bassGlow = pow(bassGlow, 1.8 - uSongPhase * 0.3);
 
             vec3 bassColor = uColor * 1.2 + vec3(0.08, 0.02, 0.0);
 
-            // === MID ZONE — WIDTH EXPANDS WITH EVOLUTION ===
+            // === MID ZONE — OCEAN UNDULATION ===
             float midY = abs(y - 0.5);
-            float midWave = sin(uTime * 0.6 + x * 4.0) * (0.03 + abs(uEvoMids) * 0.04);
-            // Evolution expands/contracts the mid band
-            float midWidth = 0.55 + uEvoMids * 0.12 + midWave;
+            // Multiple wave layers for organic flowing feel
+            float midWave1 = sin(uTime * 0.35 + x * 4.0) * 0.05;
+            float midWave2 = sin(uTime * 0.5 + x * 6.0 + 2.0) * 0.03;
+            float midWave3 = cos(uTime * 0.2 + x * 2.5 + y * 4.0) * 0.04;
+            float midWidth = 0.55 + uEvoMids * 0.12 + midWave1 + midWave2 + midWave3;
             float midGlow = (1.0 - smoothstep(0.0, midWidth, midY)) * uMids * 0.35;
-            // Organic edge ripple during evolution
-            midGlow *= 1.0 + sin(x * 8.0 + uTime * 0.7) * uEvoMids * 0.15;
+            // Gentle ripple across the mid band
+            midGlow *= 1.0 + sin(x * 6.0 + uTime * 0.4) * 0.2 * (0.3 + uEvoMids * 0.7);
 
-            // === HIGH ZONE — SPARKLE DENSITY SHIFTS ===
-            float highEvoPush = max(uEvoHighs, 0.0); // only expand, don't collapse
-            float highGlow = y * uHighs * (0.12 + highEvoPush * 0.06);
-            highGlow += centerX * uHighs * (0.06 + highEvoPush * 0.04);
+            // === HIGH ZONE — SHIMMER WAVE ===
+            float highEvoPush = max(uEvoHighs, 0.0);
+            // Shimmer that drifts slowly across the top
+            float shimmer = sin(x * 10.0 + uTime * 0.7) * sin(y * 8.0 + uTime * 0.3) * 0.5 + 0.5;
+            float highGlow = y * uHighs * (0.10 + highEvoPush * 0.05);
+            highGlow += centerX * uHighs * (0.05 + highEvoPush * 0.03);
+            highGlow *= 0.7 + shimmer * 0.3;
 
-            // === BEAT FLASH ===
+            // === BEAT FLASH (gentler) ===
             float flashDist = length(vec2(x - 0.5, (y - 0.3) * 1.5));
             float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.75 + uSongPhase * 0.15, flashDist));
-            flash = pow(flash, 1.5);
+            flash = pow(flash, 2.0);  // sharper falloff = less blinding
 
             // Compose
             vec3 col = bg;
-            col += bassColor * bassGlow * uForge * (0.55 + uSongPhase * 0.15);
+            col += bassColor * bassGlow * uForge * (0.50 + uSongPhase * 0.12);
             col += uColor * midGlow * uForge;
-            col += vec3(0.7, 0.8, 1.0) * highGlow * uForge;
-            col += vec3(1.0, 0.97, 0.92) * flash * 0.5;
+            col += (uColor * 0.3 + vec3(0.5, 0.6, 0.8)) * highGlow * uForge;
+            col += vec3(1.0, 0.97, 0.92) * flash * 0.35;
 
             // Vignette loosens at higher songPhase
             float vignetteRadius = 1.3 - uSongPhase * 0.2;
