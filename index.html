@@ -37,7 +37,7 @@
                 </select>
             </div>
 
-            <!-- Live Audio Mode Controls (Phase 2 Placeholder) -->
+            <!-- Live Audio Mode Controls -->
             <div id="liveAudioControls" class="control-group hidden">
                 <label>Audio Source</label>
                 <div class="radio-group">
@@ -47,7 +47,16 @@
                     <input type="radio" id="srcMic" name="audioSrc" value="mic">
                     <label for="srcMic">Microphone</label>
                 </div>
-                <input type="file" id="audioFileUpload" accept="audio/*" class="glass-btn">
+
+                <div class="file-upload-wrapper mt-2">
+                    <label for="audioFileUpload" class="glass-btn"
+                        style="text-align: center; display: block; border: 1px dashed var(--accent-color);">Choose Audio
+                        File</label>
+                    <input type="file" id="audioFileUpload" accept="audio/*" class="hidden" style="display: none;">
+                    <div id="uploadFileName" class="mt-2"
+                        style="font-size: 0.75rem; color: var(--accent-color); text-align: center; min-height: 14px;">
+                    </div>
+                </div>
             </div>
 
             <!-- Global Controls Panel -->

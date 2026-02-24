@@ -10,18 +10,9 @@ const modeLiveBtn = document.getElementById('modeLiveBtn');
 const catalogControls = document.getElementById('catalogControls');
 const liveAudioControls = document.getElementById('liveAudioControls');
 
-const synMap = {
-    'C Major': '#7bdff2', 'C# Major': '#b2f7ef', 'D Major': '#eff7f6', 'D# Major': '#f7d6e0',
-    'E Major': '#f2b5d4', 'F Major': '#b388eb', 'F# Major': '#8093f1', 'G Major': '#72ddf7',
-    'G# Major': '#69fff1', 'A Major': '#5eead4', 'A# Major': '#f7c66a', 'B Major': '#ffd166',
-    'C Minor': '#1f3a5f', 'C# Minor': '#1b2a41', 'D Minor': '#2d1b3d', 'D# Minor': '#3a1f2b',
-    'E Minor': '#1f3a2b', 'F Minor': '#2b1f3a', 'F# Minor': '#1f2b3a', 'G Minor': '#2a2a2a',
-    'G# Minor': '#23395d', 'A Minor': '#2b2d42', 'A# Minor': '#3d2c2e', 'B Minor': '#2d3142'
-};
-
 let width, height;
 let particles = [];
-let currentColor = synMap['B Minor'] || '#2d3142'; // default
+let currentColor = '#2d3142'; // default, picks up from setTrack() on init
 let targetColor = currentColor;
 let intensity = 0.5;
 let forgeStage = 1.0; // 0.0 to 1.0 (The Forge concept slider)
@@ -50,7 +41,7 @@ function init() {
 
 function setTrack(index) {
     const track = allLoveCatalog[index];
-    targetColor = synMap[track.key] || '#2d3142';
+    targetColor = track.synHex || '#2d3142';
 
     // Scale intensity (dynamically changing slider too)
     intensity = track.intensity || 0.5;
@@ -71,14 +62,16 @@ window.addEventListener('resize', resize);
 function drawBackgroundWash() {
     let t = Date.now() * 0.0005;
     let pulseScale = 1 + Math.sin(t) * (0.1 * intensity);
+    let baseOpacity = 0.45; // Significantly higher base visibility
 
     // Audio Reactivity (Sub-bass drives pulse scale heavily)
     if (currentMode === 'live' && window.audioData && window.audioData.isActive) {
         const sub = window.audioData.subBass / 255; // 0 to 1
-        pulseScale = 1 + (sub * 0.5); // Up to 1.5x scale bounce
+        pulseScale = 1 + (sub * 0.85); // Up to nearly double scale heartbeat
+        baseOpacity += (sub * 0.35); // Boost opacity on sub hits!
     }
 
-    pulseScale *= forgeStage; // Multiply by the forge slider
+    pulseScale *= forgeStage;
 
     ctx.fillStyle = '#061014';
     ctx.fillRect(0, 0, width, height);
@@ -86,15 +79,15 @@ function drawBackgroundWash() {
     const cx = width / 2;
     const cy = height / 2;
     // Shake effect on heavy sub
-    const xOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 10 * Math.sin(t * 10) : 0;
-    const yOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 10 * Math.cos(t * 10) : 0;
+    const xOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 12 * Math.sin(t * 15) : 0;
+    const yOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 12 * Math.cos(t * 15) : 0;
 
     const radius = Math.max(width, height) * 0.8 * pulseScale;
-
     const bgGradient = ctx.createRadialGradient(cx + xOffset, cy + yOffset, 0, cx + xOffset, cy + yOffset, radius);
 
-    // Opacity scales with pulse
-    const alpha = Math.floor(0.2 * 255).toString(16).padStart(2, '0');
+    // Opacity scales with pulse and audio hits
+    const rawAlpha = Math.floor(Math.min(baseOpacity, 1.0) * 255);
+    const alpha = rawAlpha.toString(16).padStart(2, '0');
     bgGradient.addColorStop(0, currentColor + alpha);
     bgGradient.addColorStop(1, 'transparent');
 
@@ -177,13 +170,12 @@ class SparkleParticle {
         let pSize = this.size;
 
         if (currentMode === 'live' && window.audioData && window.audioData.isActive) {
-            // Highs drive brightness and slight size bump of sparkles
+            // Highs drive brightness and dramatic size bump of sparkles
             const highs = window.audioData.highs / 255;
-            currentOpacity += (highs * 0.8);
-            pSize += (highs * 2);
+            currentOpacity += (highs * 1.5); // Sparkle POP!
+            pSize += (highs * 3.5);
         }
 
-        // Apply forge stage to master opacity
         currentOpacity *= forgeStage;
 
         if (currentOpacity > 0) {

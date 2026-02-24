@@ -81,9 +81,13 @@ function connectMic() {
 fileInput.addEventListener('change', function () {
     initAudio();
     const files = this.files;
-    if (files.length === 0) return;
+    if (files.length === 0) {
+        document.getElementById('uploadFileName').textContent = "";
+        return;
+    }
 
     const file = files[0];
+    document.getElementById('uploadFileName').textContent = file.name;
     const reader = new FileReader();
 
     reader.onload = function (e) {
