@@ -428,42 +428,53 @@ function updateKeyDetection() {
     if (!audioCtx || !dataArray) return;
 
     const sampleRate = audioCtx.sampleRate;
-    const binWidth = sampleRate / analyser.fftSize;
+    const fftSize = analyser.fftSize;
+    const binWidth = sampleRate / fftSize;
 
-    // Build TWO chromagrams: bass-only + full range
-    // The bass chromagram heavily favors the actual key root
-    // (bass almost always plays the root note more than any chord tone)
+    // PRE-COMPUTE SEMITONE BOUNDARIES
+    // Instead of rounding each bin to a pitch class (which causes semitone errors),
+    // define exact frequency ranges for each pitch class and sum all bin energy within.
     const bassChroma = new Float32Array(12);
     const fullChroma = new Float32Array(12);
     let totalMagnitude = 0;
 
-    for (let i = 1; i < bufferLength; i++) {
-        const magnitude = dataArray[i] / 255;
-        if (magnitude < 0.03) continue;
+    // For each pitch class across octaves 2-6 (C2=65Hz to B6=1976Hz for bass, up to B7 for full)
+    for (let octave = 2; octave <= 7; octave++) {
+        for (let pc = 0; pc < 12; pc++) {
+            const midiNote = (octave + 1) * 12 + pc; // C2=36, C3=48, etc.
 
-        const freq = i * binWidth;
-        if (freq < 60 || freq > 4000) continue;
+            // Frequency boundaries: half a semitone below to half a semitone above
+            const freqLow = 440 * Math.pow(2, (midiNote - 0.5 - 69) / 12);
+            const freqHigh = 440 * Math.pow(2, (midiNote + 0.5 - 69) / 12);
 
-        const midiNote = 12 * Math.log2(freq / 440) + 69;
-        const pitchClass = Math.round(midiNote) % 12;
-        const normalizedPC = pitchClass < 0 ? pitchClass + 12 : pitchClass;
+            // Skip out-of-range notes
+            if (freqHigh < 55 || freqLow > 4200) continue;
 
-        const mag3 = magnitude * magnitude * magnitude;
+            // Convert to FFT bin range
+            const binLow = Math.max(1, Math.floor(freqLow / binWidth));
+            const binHigh = Math.min(bufferLength - 1, Math.ceil(freqHigh / binWidth));
 
-        if (freq < 350) {
-            // Bass register (60-350Hz): bass guitar, bass synth, kick fundamental
-            // These notes almost always outline the root of the key
-            bassChroma[normalizedPC] += mag3 * 2.0; // extra weight
+            // Sum energy across all bins in this semitone's range
+            let energy = 0;
+            for (let b = binLow; b <= binHigh; b++) {
+                const mag = dataArray[b] / 255;
+                if (mag > 0.02) {
+                    energy += mag * mag * mag; // cube for emphasis
+                    totalMagnitude += mag;
+                }
+            }
+
+            // Bass register gets extra weight (octaves 2-3, roughly 65-260Hz)
+            if (octave <= 3) {
+                bassChroma[pc] += energy * 2.5;
+            }
+            fullChroma[pc] += energy;
         }
-
-        // Full range always gets a vote
-        fullChroma[normalizedPC] += mag3;
-        totalMagnitude += magnitude;
     }
 
     if (totalMagnitude < 1.0) return;
 
-    // Blend: 70% bass + 30% full — bass is king for key detection
+    // Blend: 70% bass + 30% full — bass anchors the key root
     const rawChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
         rawChroma[i] = bassChroma[i] * 0.7 + fullChroma[i] * 0.3;
