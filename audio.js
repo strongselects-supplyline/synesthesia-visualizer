@@ -375,30 +375,53 @@ function computeEvolution(history) {
 // KEY DETECTION — Chromagram + Krumhansl-Schmuckler
 // ============================================================
 
+// Relative major/minor pairs share the same root (e.g., A Major = F# Minor)
+const RELATIVE_MINOR_MAP = {
+    'C Major': 'A Minor', 'A Minor': 'C Major',
+    'G Major': 'E Minor', 'E Minor': 'G Major',
+    'D Major': 'B Minor', 'B Minor': 'D Major',
+    'A Major': 'F# Minor', 'F# Minor': 'A Major',
+    'E Major': 'C# Minor', 'C# Minor': 'E Major',
+    'B Major': 'G# Minor', 'G# Minor': 'B Major',
+    'Gb Major': 'Eb Minor', 'Eb Minor': 'Gb Major',
+    'Db Major': 'Bb Minor', 'Bb Minor': 'Db Major',
+    'Ab Major': 'F Minor', 'F Minor': 'Ab Major',
+    'Eb Major': 'C Minor', 'C Minor': 'Eb Major',
+    'Bb Major': 'G Minor', 'G Minor': 'Bb Major',
+    'F Major': 'D Minor', 'D Minor': 'F Major',
+};
+
+let keyDebugTimer = 0;
+
 function updateKeyDetection() {
     if (!audioCtx || !dataArray) return;
 
     const sampleRate = audioCtx.sampleRate;
-    const binWidth = sampleRate / (analyser.fftSize);
+    const binWidth = sampleRate / analyser.fftSize;
 
     // Build raw chroma vector from FFT data
     const rawChroma = new Float32Array(12);
+    let totalMagnitude = 0;
 
     for (let i = 1; i < bufferLength; i++) {
         const magnitude = dataArray[i] / 255;
-        if (magnitude < 0.05) continue; // noise gate
+        if (magnitude < 0.03) continue; // lower noise gate for better pitch capture
 
         const freq = i * binWidth;
-        if (freq < 60 || freq > 5000) continue; // musical range only
+        if (freq < 80 || freq > 4000) continue; // tighter range: bass + vocals + leads
 
         // Convert frequency to pitch class (0=C, 1=C#, ... 11=B)
         const midiNote = 12 * Math.log2(freq / 440) + 69;
         const pitchClass = Math.round(midiNote) % 12;
         const normalizedPC = pitchClass < 0 ? pitchClass + 12 : pitchClass;
 
-        // Weight by magnitude squared (emphasize louder notes)
-        rawChroma[normalizedPC] += magnitude * magnitude;
+        // Weight by magnitude cubed (STRONGLY emphasize dominant pitches)
+        rawChroma[normalizedPC] += magnitude * magnitude * magnitude;
+        totalMagnitude += magnitude;
     }
+
+    // Skip if very little total energy
+    if (totalMagnitude < 1.0) return;
 
     // Smooth the chroma vector over time
     for (let i = 0; i < 12; i++) {
@@ -410,47 +433,82 @@ function updateKeyDetection() {
     for (let i = 0; i < 12; i++) {
         if (chromaVector[i] > chromaMax) chromaMax = chromaVector[i];
     }
-    if (chromaMax < 0.001) return; // silence — skip
+    if (chromaMax < 0.0001) return;
 
     const normalizedChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
         normalizedChroma[i] = chromaVector[i] / chromaMax;
     }
 
-    // Correlate against all 24 keys (12 major + 12 minor)
+    // Correlate against all 24 keys
     let bestKey = '';
     let bestCorr = -Infinity;
+    let secondBestKey = '';
+    let secondBestCorr = -Infinity;
 
     for (let root = 0; root < 12; root++) {
-        // Rotate the profile to start at this root
         const majorCorr = correlate(normalizedChroma, MAJOR_PROFILE, root);
         const minorCorr = correlate(normalizedChroma, MINOR_PROFILE, root);
 
         if (majorCorr > bestCorr) {
+            secondBestCorr = bestCorr;
+            secondBestKey = bestKey;
             bestCorr = majorCorr;
             bestKey = KEY_NAMES[root] + ' Major';
+        } else if (majorCorr > secondBestCorr) {
+            secondBestCorr = majorCorr;
+            secondBestKey = KEY_NAMES[root] + ' Major';
         }
+
         if (minorCorr > bestCorr) {
+            secondBestCorr = bestCorr;
+            secondBestKey = bestKey;
             bestCorr = minorCorr;
             bestKey = KEY_NAMES[root] + ' Minor';
+        } else if (minorCorr > secondBestCorr) {
+            secondBestCorr = minorCorr;
+            secondBestKey = KEY_NAMES[root] + ' Minor';
         }
     }
 
-    // Normalize confidence (correlation for musical audio typically 0.2-0.9)
-    const confidence = Math.max(0, Math.min(1, (bestCorr - 0.15) / 0.7));
+    const confidence = Math.max(0, Math.min(1, (bestCorr + 1) / 2)); // map -1..1 to 0..1
 
-    // Stability: only accept if consistent for KEY_STABLE_THRESHOLD frames
-    if (bestKey === lastDetectedKey && confidence > KEY_CONFIDENCE_MIN) {
+    // Check if best key is the same OR relative major/minor of last detected
+    const isRelated = (bestKey === lastDetectedKey) ||
+        (RELATIVE_MINOR_MAP[bestKey] === lastDetectedKey) ||
+        (RELATIVE_MINOR_MAP[lastDetectedKey] === bestKey);
+
+    if (isRelated) {
         keyStableFrames++;
     } else {
         lastDetectedKey = bestKey;
         keyStableFrames = 0;
     }
 
-    if (keyStableFrames >= KEY_STABLE_THRESHOLD && confidence > KEY_CONFIDENCE_MIN) {
+    // ALWAYS update the display with the current best guess
+    const keyEl = document.getElementById('detectedKeyDisplay');
+    if (keyEl) {
+        keyEl.textContent = `${bestKey} (${Math.round(confidence * 100)}%)`;
+    }
+
+    // Accept key when stable enough (or on first detection with any confidence)
+    const accepted = keyStableFrames >= KEY_STABLE_THRESHOLD ||
+        (window.audioData.detectedKey === '' && confidence > 0.4);
+
+    if (accepted) {
         window.audioData.detectedKey = bestKey;
         window.audioData.keyConfidence = confidence;
         window.audioData.detectedHex = SYN_MAP[bestKey] || '';
+    }
+
+    // Debug logging every 2 seconds
+    keyDebugTimer++;
+    if (keyDebugTimer % 120 === 0) {
+        console.log('[Key Detection]', bestKey, 'corr:', bestCorr.toFixed(3),
+            'conf:', (confidence * 100).toFixed(0) + '%',
+            'stable:', keyStableFrames, '/', KEY_STABLE_THRESHOLD,
+            'accepted:', accepted,
+            'hex:', SYN_MAP[bestKey] || 'none');
     }
 }
 
