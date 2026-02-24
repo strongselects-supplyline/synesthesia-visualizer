@@ -431,42 +431,40 @@ function updateKeyDetection() {
     const fftSize = analyser.fftSize;
     const binWidth = sampleRate / fftSize;
 
-    // PRE-COMPUTE SEMITONE BOUNDARIES
-    // Instead of rounding each bin to a pitch class (which causes semitone errors),
-    // define exact frequency ranges for each pitch class and sum all bin energy within.
+    // PRE-COMPUTE SEMITONE BOUNDARIES — 3 TIERS:
+    // Sub-bass (60-180Hz): almost exclusively root notes — strongest signal for key
+    // Bass (180-400Hz): bass guitar upper register + low keys
+    // Full (60-4200Hz): everything
+    const subBassChroma = new Float32Array(12);
     const bassChroma = new Float32Array(12);
     const fullChroma = new Float32Array(12);
     let totalMagnitude = 0;
 
-    // For each pitch class across octaves 2-6 (C2=65Hz to B6=1976Hz for bass, up to B7 for full)
     for (let octave = 2; octave <= 7; octave++) {
         for (let pc = 0; pc < 12; pc++) {
-            const midiNote = (octave + 1) * 12 + pc; // C2=36, C3=48, etc.
-
-            // Frequency boundaries: half a semitone below to half a semitone above
+            const midiNote = (octave + 1) * 12 + pc;
             const freqLow = 440 * Math.pow(2, (midiNote - 0.5 - 69) / 12);
             const freqHigh = 440 * Math.pow(2, (midiNote + 0.5 - 69) / 12);
-
-            // Skip out-of-range notes
             if (freqHigh < 55 || freqLow > 4200) continue;
 
-            // Convert to FFT bin range
             const binLow = Math.max(1, Math.floor(freqLow / binWidth));
             const binHigh = Math.min(bufferLength - 1, Math.ceil(freqHigh / binWidth));
 
-            // Sum energy across all bins in this semitone's range
             let energy = 0;
             for (let b = binLow; b <= binHigh; b++) {
                 const mag = dataArray[b] / 255;
                 if (mag > 0.02) {
-                    energy += mag * mag * mag; // cube for emphasis
+                    energy += mag * mag * mag;
                     totalMagnitude += mag;
                 }
             }
 
-            // Bass register gets extra weight (octaves 2-3, roughly 65-260Hz)
-            if (octave <= 3) {
-                bassChroma[pc] += energy * 2.5;
+            // Sub-bass: 60-180Hz — the root lives here
+            const midFreq = (freqLow + freqHigh) / 2;
+            if (midFreq < 180) {
+                subBassChroma[pc] += energy;
+            } else if (midFreq < 400) {
+                bassChroma[pc] += energy;
             }
             fullChroma[pc] += energy;
         }
@@ -474,10 +472,10 @@ function updateKeyDetection() {
 
     if (totalMagnitude < 1.0) return;
 
-    // Blend: 70% bass + 30% full — bass anchors the key root
+    // SHORT-TERM chroma: 50% sub-bass + 30% bass + 20% full
     const rawChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
-        rawChroma[i] = bassChroma[i] * 0.7 + fullChroma[i] * 0.3;
+        rawChroma[i] = subBassChroma[i] * 4.0 + bassChroma[i] * 2.0 + fullChroma[i] * 1.0;
     }
 
     // === SHORT-TERM chroma (fast — reacts to current chord) ===
@@ -485,9 +483,10 @@ function updateKeyDetection() {
         chromaVector[i] = chromaVector[i] * (1 - CHROMA_SMOOTH) + rawChroma[i] * CHROMA_SMOOTH;
     }
 
-    // === LONG-TERM chroma (slow — accumulates the overall scale) ===
+    // === LONG-TERM: raw histogram — just ADD everything, no smoothing ===
+    // Over the entire song, the root pitch class accumulates the most energy
     for (let i = 0; i < 12; i++) {
-        longTermChroma[i] = longTermChroma[i] * (1 - LONG_TERM_SMOOTH) + rawChroma[i] * LONG_TERM_SMOOTH;
+        longTermChroma[i] += rawChroma[i];
     }
     longTermFrames++;
 
