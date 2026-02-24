@@ -79,11 +79,11 @@ const PHASE_HISTORY_SIZE = 450;  // every 4th frame = ~30s
 let phaseEnergyHistory = [];
 
 // --- Key Detection State ---
-const CHROMA_SMOOTH = 0.18;
+const CHROMA_SMOOTH = 0.25;
 let chromaVector = new Float32Array(12);
 let keyStableFrames = 0;
 let lastDetectedKey = '';
-const KEY_STABLE_THRESHOLD = 15;     // frames (~0.25s) before first guess
+const KEY_STABLE_THRESHOLD = 10;     // frames (~0.17s) before first guess
 const KEY_CONFIDENCE_MIN = 0.3;
 
 // Key VOTING system — accumulates evidence across the entire song
@@ -91,9 +91,9 @@ let keyVotes = {};           // { 'A Major': 142, 'F# Minor': 89, ... }
 let totalKeyVotes = 0;
 let lockedKey = '';          // once locked, this IS the song's key
 let keyIsLocked = false;
-const LOCK_THRESHOLD = 0.50;     // lock in when a key has 50% of all votes
-const OVERTURN_THRESHOLD = 0.55; // once locked, need 55% from a different key to change
-const VOTE_DECAY = 0.997;        // votes decay each frame so system stays responsive
+const LOCK_THRESHOLD = 0.45;     // lock in when a key has 45% of all votes
+const OVERTURN_THRESHOLD = 0.50; // once locked, need 50% from a different key to change
+const VOTE_DECAY = 0.99;         // aggressive decay — only last ~1-2 seconds matter
 
 // Krumhansl-Schmuckler key profiles
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -460,10 +460,10 @@ function updateKeyDetection() {
 
     if (totalMagnitude < 1.0) return;
 
-    // Blend: 40% bass + 60% full — bass has outsized influence on key center
+    // Blend: 70% bass + 30% full — bass is king for key detection
     const rawChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
-        rawChroma[i] = bassChroma[i] * 0.4 + fullChroma[i] * 0.6;
+        rawChroma[i] = bassChroma[i] * 0.7 + fullChroma[i] * 0.3;
     }
 
     // Smooth the chroma vector over time
@@ -561,7 +561,7 @@ function updateKeyDetection() {
     // --- LOCK-IN LOGIC ---
     if (!keyIsLocked) {
         // Not yet locked: lock when leading key has enough vote share
-        if (votePct >= LOCK_THRESHOLD && totalKeyVotes > 30) {
+        if (votePct >= LOCK_THRESHOLD && totalKeyVotes > 10) {
             lockedKey = leadingKey;
             keyIsLocked = true;
             console.log('[Key LOCKED]', lockedKey, 'with', (votePct * 100).toFixed(0) + '% of votes',
