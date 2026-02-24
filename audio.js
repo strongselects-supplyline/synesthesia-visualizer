@@ -516,13 +516,10 @@ function updateKeyDetection() {
 
     const confidence = Math.max(0, Math.min(1, (bestCorr + 1) / 2));
 
-    // --- VOTING SYSTEM ---
-    // Every frame's best guess gets a vote, weighted by confidence
-    // Related major/minor pairs vote together (A Major + F# Minor both count as 'A Major' group)
+    // --- VOTING (no lock — pure rolling democracy) ---
     const voteKey = bestKey;
     const relatedKey = RELATIVE_MINOR_MAP[bestKey] || '';
 
-    // Cast vote (confidence-weighted)
     const voteWeight = confidence * confidence;
     if (!keyVotes[voteKey]) keyVotes[voteKey] = 0;
     keyVotes[voteKey] += voteWeight;
@@ -532,77 +529,102 @@ function updateKeyDetection() {
     }
     totalKeyVotes += voteWeight;
 
-    // Apply vote decay — old votes gradually fade, keeping system responsive
+    // Aggressive decay — only last ~1-2 seconds matter
     for (const key of Object.keys(keyVotes)) {
         keyVotes[key] *= VOTE_DECAY;
+        if (keyVotes[key] < 0.001) delete keyVotes[key]; // clean up dust
     }
     totalKeyVotes *= VOTE_DECAY;
 
-    // Find the leading key by total votes
-    let leadingKey = '';
-    let leadingVotes = 0;
+    // --- COLLECT TOP KEYS BY VOTE GROUP ---
+    // Group related major/minor pairs, rank by combined votes
+    const groups = {};
     for (const [key, votes] of Object.entries(keyVotes)) {
-        // Group related keys: combine A Major + F# Minor votes
-        const related = RELATIVE_MINOR_MAP[key] || '';
-        const combinedVotes = votes + (keyVotes[related] || 0);
-        if (combinedVotes > leadingVotes) {
-            leadingVotes = combinedVotes;
-            // Pick whichever of the pair has more individual votes
-            leadingKey = (keyVotes[related] || 0) > votes ? related : key;
-        }
+        const related = RELATIVE_MINOR_MAP[key] || key;
+        // Use the alphabetically first as group ID to avoid double-counting
+        const groupId = key < related ? key : related;
+        if (!groups[groupId]) groups[groupId] = { keys: [], totalVotes: 0 };
+        if (!groups[groupId].keys.includes(key)) groups[groupId].keys.push(key);
+        groups[groupId].totalVotes += votes;
     }
 
-    // Voting percentage (how dominant is the leading key?)
-    // Count combined related-key votes vs total
-    const leadingRelated = RELATIVE_MINOR_MAP[leadingKey] || '';
-    const leadingCombined = (keyVotes[leadingKey] || 0) + (keyVotes[leadingRelated] || 0);
-    const votePct = totalKeyVotes > 0 ? leadingCombined / totalKeyVotes : 0;
+    // Sort groups by votes, take top 3
+    const ranked = Object.entries(groups)
+        .sort((a, b) => b[1].totalVotes - a[1].totalVotes)
+        .slice(0, 3);
 
-    // --- LOCK-IN LOGIC ---
-    if (!keyIsLocked) {
-        // Not yet locked: lock when leading key has enough vote share
-        if (votePct >= LOCK_THRESHOLD && totalKeyVotes > 10) {
-            lockedKey = leadingKey;
-            keyIsLocked = true;
-            console.log('[Key LOCKED]', lockedKey, 'with', (votePct * 100).toFixed(0) + '% of votes',
-                '| hex:', SYN_MAP[lockedKey] || 'none');
+    if (ranked.length === 0 || totalKeyVotes < 0.1) return;
+
+    // --- OMBRÉ COLOR BLENDING ---
+    // Blend synesthesia colors weighted by each key group's vote share
+    let blendR = 0, blendG = 0, blendB = 0;
+    let totalWeight = 0;
+    let primaryKey = '';
+    let primaryPct = 0;
+
+    for (const [groupId, group] of ranked) {
+        const pct = group.totalVotes / totalKeyVotes;
+        // Pick the key in this group with a known hex
+        let hex = '';
+        let keyName = '';
+        for (const k of group.keys) {
+            if (SYN_MAP[k]) { hex = SYN_MAP[k]; keyName = k; break; }
         }
-    } else {
-        // Already locked: only overturn if a DIFFERENT key group dominates strongly
-        const lockedRelated = RELATIVE_MINOR_MAP[lockedKey] || '';
-        const isLeadingSameGroup = (leadingKey === lockedKey || leadingKey === lockedRelated);
-        if (!isLeadingSameGroup && votePct >= OVERTURN_THRESHOLD) {
-            lockedKey = leadingKey;
-            console.log('[Key OVERTURNED]', lockedKey, 'with', (votePct * 100).toFixed(0) + '%');
-        }
+        if (!hex) continue;
+
+        const rgb = hexToRgb(hex);
+        blendR += rgb.r * pct;
+        blendG += rgb.g * pct;
+        blendB += rgb.b * pct;
+        totalWeight += pct;
+
+        if (!primaryKey) { primaryKey = keyName; primaryPct = pct; }
     }
 
-    // Set the effective key: locked key if available, otherwise best current guess
-    const effectiveKey = keyIsLocked ? lockedKey : leadingKey;
-    const lockStatus = keyIsLocked ? '🔒' : '🔍';
+    if (totalWeight > 0) {
+        blendR /= totalWeight;
+        blendG /= totalWeight;
+        blendB /= totalWeight;
+    }
+
+    const blendedHex = rgbToHex(Math.round(blendR), Math.round(blendG), Math.round(blendB));
 
     // Update UI display
     const keyEl = document.getElementById('detectedKeyDisplay');
     if (keyEl) {
-        keyEl.textContent = `${lockStatus} ${effectiveKey} (${Math.round(votePct * 100)}%)`;
+        keyEl.textContent = `${primaryKey} (${Math.round(primaryPct * 100)}%)`;
     }
 
-    // Set audioData (used by visualizer for color)
-    if (effectiveKey && (keyIsLocked || votePct > 0.35)) {
-        window.audioData.detectedKey = effectiveKey;
-        window.audioData.keyConfidence = votePct;
-        window.audioData.detectedHex = SYN_MAP[effectiveKey] || '';
-    }
+    // Set audioData — blended color for the visualizer
+    window.audioData.detectedKey = primaryKey;
+    window.audioData.keyConfidence = primaryPct;
+    window.audioData.detectedHex = blendedHex;
 
     // Debug logging every 2 seconds
     keyDebugTimer++;
     if (keyDebugTimer % 120 === 0) {
-        console.log('[Key Detection]', lockStatus, effectiveKey,
-            '| votes:', (votePct * 100).toFixed(0) + '%',
-            '| total:', Math.round(totalKeyVotes),
-            '| raw best:', bestKey, bestCorr.toFixed(3),
-            '| hex:', SYN_MAP[effectiveKey] || 'none');
+        const topKeys = ranked.map(([id, g]) => {
+            const k = g.keys.find(k => SYN_MAP[k]) || g.keys[0];
+            return `${k}:${Math.round(g.totalVotes / totalKeyVotes * 100)}%`;
+        }).join(' | ');
+        console.log('[Key Ombré]', topKeys, '→', blendedHex);
     }
+}
+
+// --- Color conversion helpers for ombré blending ---
+function hexToRgb(hex) {
+    const h = hex.replace('#', '');
+    return {
+        r: parseInt(h.substring(0, 2), 16),
+        g: parseInt(h.substring(2, 4), 16),
+        b: parseInt(h.substring(4, 6), 16)
+    };
+}
+
+function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(c =>
+        Math.max(0, Math.min(255, c)).toString(16).padStart(2, '0')
+    ).join('');
 }
 
 function correlate(chroma, profile, rootOffset) {
