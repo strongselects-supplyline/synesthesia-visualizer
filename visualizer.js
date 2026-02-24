@@ -61,6 +61,10 @@ const washUniforms = {
     uHighs: { value: 0.0 },
     uBeatFlash: { value: 0.0 },
     uForge: { value: 1.0 },
+    uEvoBass: { value: 0.0 },    // -1 to +1: dropping to building
+    uEvoMids: { value: 0.0 },
+    uEvoHighs: { value: 0.0 },
+    uSongPhase: { value: 0.0 },  // 0 calm, 1 peak
     uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
 };
 
@@ -82,51 +86,64 @@ const washMaterial = new THREE.ShaderMaterial({
         uniform float uHighs;
         uniform float uBeatFlash;
         uniform float uForge;
+        uniform float uEvoBass;
+        uniform float uEvoMids;
+        uniform float uEvoHighs;
+        uniform float uSongPhase;
         varying vec2 vUv;
 
         void main() {
             vec3 bg = vec3(0.012, 0.031, 0.063);
 
-            // Vertical position: 0 = bottom, 1 = top
             float y = vUv.y;
             float x = vUv.x;
-            float centerX = abs(x - 0.5) * 2.0; // 0 at center, 1 at edges
+            float centerX = abs(x - 0.5) * 2.0;
 
-            // === BASS ZONE (bottom center) ===
-            // Warm glow anchored to bottom center, expands with sub-bass
-            // Organic wobble so the glow breathes rather than snapping
-            float bassWobble = sin(uTime * 0.8 + x * 3.0) * 0.04;
+            // === BASS ZONE — SHAPE MORPHS WITH EVOLUTION ===
+            // Evolution shifts the squash factor: building = taller/wider, dropping = tighter
+            float bassSquash = 1.8 - uEvoBass * 0.5;  // 1.3 (tall) to 2.3 (flat)
+            float bassWobble = sin(uTime * 0.8 + x * 3.0) * (0.04 + uSongPhase * 0.03);
             float bassRadius = 0.35 + pow(uSubBass, 1.5) * 0.55 + bassWobble;
-            float bassDist = length(vec2(x - 0.5, y * 1.8)); // squashed vertically, centered low
-            float bassGlow = 1.0 - smoothstep(0.0, bassRadius, bassDist);
-            bassGlow = pow(bassGlow, 1.8); // slightly softer falloff
+            // Evolution widens the bass zone during buildups
+            bassRadius += uEvoBass * 0.15;
 
-            // Bass color: warmer, more saturated version of the key color
+            // Asymmetric distortion: sine wave modulated by evolution
+            float distortX = x - 0.5 + sin(y * 4.0 + uTime * 0.3) * uEvoBass * 0.05;
+            float bassDist = length(vec2(distortX, y * bassSquash));
+            float bassGlow = 1.0 - smoothstep(0.0, bassRadius, bassDist);
+            bassGlow = pow(bassGlow, 1.8 - uSongPhase * 0.3); // softer at peak energy
+
             vec3 bassColor = uColor * 1.2 + vec3(0.08, 0.02, 0.0);
 
-            // === MID ZONE (center field) ===
-            float midY = abs(y - 0.5); // distance from vertical center
-            float midWave = sin(uTime * 0.6 + x * 4.0) * 0.03; // gentle wave
-            float midGlow = (1.0 - smoothstep(0.0, 0.55 + midWave, midY)) * uMids * 0.35;
+            // === MID ZONE — WIDTH EXPANDS WITH EVOLUTION ===
+            float midY = abs(y - 0.5);
+            float midWave = sin(uTime * 0.6 + x * 4.0) * (0.03 + abs(uEvoMids) * 0.04);
+            // Evolution expands/contracts the mid band
+            float midWidth = 0.55 + uEvoMids * 0.12 + midWave;
+            float midGlow = (1.0 - smoothstep(0.0, midWidth, midY)) * uMids * 0.35;
+            // Organic edge ripple during evolution
+            midGlow *= 1.0 + sin(x * 8.0 + uTime * 0.7) * uEvoMids * 0.15;
 
-            // === HIGH ZONE (top + edges) ===
-            float highGlow = y * uHighs * 0.12; // brighter toward top
-            highGlow += centerX * uHighs * 0.06; // shimmer at edges
+            // === HIGH ZONE — SPARKLE DENSITY SHIFTS ===
+            float highEvoPush = max(uEvoHighs, 0.0); // only expand, don't collapse
+            float highGlow = y * uHighs * (0.12 + highEvoPush * 0.06);
+            highGlow += centerX * uHighs * (0.06 + highEvoPush * 0.04);
 
-            // === BEAT FLASH (softened — warm pulse, not strobe) ===
+            // === BEAT FLASH ===
             float flashDist = length(vec2(x - 0.5, (y - 0.3) * 1.5));
-            float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.75, flashDist));
+            float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.75 + uSongPhase * 0.15, flashDist));
             flash = pow(flash, 1.5);
 
             // Compose
             vec3 col = bg;
-            col += bassColor * bassGlow * uForge * 0.55;
+            col += bassColor * bassGlow * uForge * (0.55 + uSongPhase * 0.15);
             col += uColor * midGlow * uForge;
             col += vec3(0.7, 0.8, 1.0) * highGlow * uForge;
-            col += vec3(1.0, 0.97, 0.92) * flash * 0.5; // gentler flash
+            col += vec3(1.0, 0.97, 0.92) * flash * 0.5;
 
-            // Vignette
-            float vignette = 1.0 - pow(length(vUv - 0.5) * 1.3, 2.5);
+            // Vignette loosens at higher songPhase
+            float vignetteRadius = 1.3 - uSongPhase * 0.2;
+            float vignette = 1.0 - pow(length(vUv - 0.5) * vignetteRadius, 2.5);
             col *= max(vignette, 0.15);
 
             gl_FragColor = vec4(col, 1.0);
@@ -368,6 +385,7 @@ const highUniforms = {
     uHighs: { value: 0.0 },
     uBeatPunch: { value: 0.0 },
     uForge: { value: 1.0 },
+    uEvoHighs: { value: 0.0 },
     uPixelRatio: { value: renderer.getPixelRatio() }
 };
 
@@ -379,24 +397,27 @@ const highMat = new THREE.ShaderMaterial({
         uniform float uTime;
         uniform float uHighs;
         uniform float uBeatPunch;
+        uniform float uEvoHighs;
         uniform float uPixelRatio;
         varying float vAlpha;
 
         void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
 
-            // Gentle twinkle — slower, smoother
-            float twinkle = sin(aPhase + uTime * 2.0) * 0.5 + 0.5;
-            float twinkle2 = sin(aPhase * 1.3 + uTime * 1.4) * 0.5 + 0.5;
-            float combinedTwinkle = twinkle * 0.6 + twinkle2 * 0.4; // layered, less binary
+            // Twinkle speed modulated by evolution: building = faster sparkle
+            float evoSpeed = 2.0 + uEvoHighs * 1.0;
+            float twinkle = sin(aPhase + uTime * evoSpeed) * 0.5 + 0.5;
+            float twinkle2 = sin(aPhase * 1.3 + uTime * (evoSpeed * 0.7)) * 0.5 + 0.5;
+            float combinedTwinkle = twinkle * 0.6 + twinkle2 * 0.4;
 
-            // Sparkle responds to highs (tamed)
+            // Sparkle responds to highs + evolution
             float highsPow = pow(uHighs, 1.3);
-            float size = aSize * (0.6 + combinedTwinkle * 0.4) * (1.0 + highsPow * 5.0 + uBeatPunch * 1.0);
+            float evoScale = 1.0 + max(uEvoHighs, 0.0) * 3.0; // building = bigger sparkle
+            float size = aSize * (0.6 + combinedTwinkle * 0.4) * (1.0 + highsPow * 5.0 + uBeatPunch * 1.0) * evoScale;
             gl_PointSize = size * uPixelRatio * (35.0 / -mvPosition.z);
 
-            // Softer alpha — no harsh on/off
-            vAlpha = pow(combinedTwinkle, 1.5) * (0.12 + highsPow * 1.5);
+            // Alpha: brighter during buildup, dimmer during breakdown
+            vAlpha = pow(combinedTwinkle, 1.5) * (0.12 + highsPow * 1.5 + max(uEvoHighs, 0.0) * 0.3);
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -434,27 +455,33 @@ function updateBassParticles() {
     const p = bassGeo.attributes.position.array;
     const audio = window.audioData;
     const chaos = 1.0 + (1.0 - forgeStage) * 2.0;
+    const evoBass = audio.evolutionBass || 0;
+
+    // Evolution controls spread: building = wider, dropping = tighter
+    const spreadX = 30 + evoBass * 12;  // 18 (tight) to 42 (wide)
+    const anchorY = -5 + evoBass * 5;   // particles rise during buildups
 
     for (let i = 0; i < BASS_COUNT; i++) {
         const ix = i * 3, iy = i * 3 + 1, iz = i * 3 + 2;
 
-        // Slow, heavy movement
-        p[ix] += bassSpeeds[ix] * (1.0 + (audio.bass || 0) * 3.0) * chaos;
+        // Speed influenced by evolution: builds = faster
+        const evoSpeed = 1.0 + Math.max(evoBass, 0) * 2.0;
+        p[ix] += bassSpeeds[ix] * (1.0 + (audio.bass || 0) * 3.0) * chaos * evoSpeed;
         p[iy] += bassSpeeds[iy] * (1.0 + (audio.subBass || 0) * 2.0);
 
         // Z decay
         p[iz] *= 0.93;
 
-        // Beat punch: random particles blast forward
+        // Beat punch
         if (audio.isBeat && Math.random() < 0.35) {
             p[iz] += (audio.beatIntensity || 0) * 10.0;
         }
 
-        // Keep anchored to bottom center
-        if (p[ix] < -30) p[ix] = 30;
-        if (p[ix] > 30) p[ix] = -30;
-        if (p[iy] < -35) p[iy] = -5;
-        if (p[iy] > 0) p[iy] = -25;
+        // Dynamic anchoring based on evolution
+        if (p[ix] < -spreadX) p[ix] = spreadX;
+        if (p[ix] > spreadX) p[ix] = -spreadX;
+        if (p[iy] < -35) p[iy] = anchorY;
+        if (p[iy] > anchorY) p[iy] = -25;
     }
     bassGeo.attributes.position.needsUpdate = true;
 }
@@ -463,7 +490,14 @@ function updateMidParticles() {
     const p = midGeo.attributes.position.array;
     const audio = window.audioData;
     const chaos = 1.0 + (1.0 - forgeStage) * 3.0;
-    const speed = intensity * 2.0 + 0.3 + (audio.mids || 0) * 4.0;
+    const evoMids = audio.evolutionMids || 0;
+
+    // Evolution modulates speed: building = faster, dropping = slower
+    const evoSpeedMul = 1.0 + evoMids * 0.8;
+    const speed = (intensity * 2.0 + 0.3 + (audio.mids || 0) * 4.0) * Math.max(evoSpeedMul, 0.3);
+
+    // Evolution modulates alpha via spread: building = wider, dropping = center clusters
+    const spreadX = 60 + evoMids * 15;
 
     for (let i = 0; i < MID_COUNT; i++) {
         const ix = i * 3, iy = i * 3 + 1;
@@ -471,12 +505,17 @@ function updateMidParticles() {
         p[ix] += midSpeeds[ix] * speed * chaos;
         p[iy] += midSpeeds[iy] * speed;
 
-        // Wrap
-        if (p[ix] < -60) p[ix] = 60;
-        if (p[ix] > 60) p[ix] = -60;
+        // Evolution: gently pull toward center during breakdowns
+        if (evoMids < -0.2) {
+            p[ix] *= 0.999; // very subtle contraction
+        }
+
+        // Dynamic wrap bounds
+        if (p[ix] < -spreadX) p[ix] = spreadX;
+        if (p[ix] > spreadX) p[ix] = -spreadX;
         if (p[iy] < -30) {
             p[iy] = 30;
-            p[ix] = (Math.random() - 0.5) * 110;
+            p[ix] = (Math.random() - 0.5) * (80 + evoMids * 30);
         }
     }
     midGeo.attributes.position.needsUpdate = true;
@@ -532,17 +571,35 @@ function animate() {
     const elapsed = clock.getElapsedTime();
     const audio = window.audioData || {};
 
-    // Color lerp
-    currentColor.lerp(targetColor, 0.04);
+    // --- KEY DETECTION → LIVE COLOR (in Live Audio mode) ---
+    if (audio.isActive && currentMode === 'live' && audio.detectedHex && audio.keyConfidence > 0.5) {
+        targetColor.set(audio.detectedHex);
+        // Update hex display
+        const hexEl = document.getElementById('hexDisplay');
+        if (hexEl) hexEl.textContent = audio.detectedHex;
+        const keyEl = document.getElementById('detectedKeyDisplay');
+        if (keyEl) keyEl.textContent = `${audio.detectedKey} (${Math.round(audio.keyConfidence * 100)}%)`;
+        document.documentElement.style.setProperty('--accent-color', audio.detectedHex);
+    }
+
+    // Color lerp — slow in live mode for smooth key transitions
+    const colorLerpSpeed = (currentMode === 'live' && audio.detectedHex) ? 0.012 : 0.04;
+    currentColor.lerp(targetColor, colorLerpSpeed);
 
     // Audio values (default to idle breathing)
     let subBass = 0, bass = 0, mids = 0, highs = 0;
+    let evoBass = 0, evoMids = 0, evoHighs = 0, songPhase = 0;
 
     if (audio.isActive) {
         subBass = audio.rawSubBass || 0;
         bass = audio.rawBass || 0;
         mids = audio.mids || 0;
         highs = audio.highs || 0;
+
+        evoBass = audio.evolutionBass || 0;
+        evoMids = audio.evolutionMids || 0;
+        evoHighs = audio.evolutionHighs || 0;
+        songPhase = audio.songPhase || 0;
 
         if (audio.isBeat) {
             beatFlashDecay = audio.beatIntensity;
@@ -558,12 +615,12 @@ function animate() {
     beatFlashDecay *= 0.72;
     beatPunchDecay *= 0.78;
 
-    // --- Bloom: beat-driven but capped for eye safety ---
+    // --- Bloom: beat-driven but capped, slightly louder at higher song phase ---
     bloomPass.strength = audio.isActive
-        ? Math.min((0.3 + beatPunchDecay * 1.8 + bass * 0.4) * forgeStage, 2.5)
+        ? Math.min((0.3 + beatPunchDecay * 1.8 + bass * 0.4 + songPhase * 0.2) * forgeStage, 2.5)
         : (0.3 + intensity * 0.3) * forgeStage;
 
-    // --- Wash ---
+    // --- Wash (with evolution uniforms) ---
     washUniforms.uTime.value = elapsed;
     washUniforms.uColor.value.copy(currentColor);
     washUniforms.uSubBass.value = subBass;
@@ -572,6 +629,10 @@ function animate() {
     washUniforms.uHighs.value = highs;
     washUniforms.uBeatFlash.value = beatFlashDecay;
     washUniforms.uForge.value = forgeStage;
+    washUniforms.uEvoBass.value = evoBass;
+    washUniforms.uEvoMids.value = evoMids;
+    washUniforms.uEvoHighs.value = evoHighs;
+    washUniforms.uSongPhase.value = songPhase;
 
     // --- Bass zone ---
     updateBassParticles();
@@ -590,11 +651,12 @@ function animate() {
     midUniforms.uBeatPunch.value = beatPunchDecay;
     midUniforms.uForge.value = forgeStage;
 
-    // --- High zone ---
+    // --- High zone (with evolution) ---
     highUniforms.uTime.value = elapsed;
     highUniforms.uHighs.value = highs;
     highUniforms.uBeatPunch.value = beatPunchDecay;
     highUniforms.uForge.value = forgeStage;
+    highUniforms.uEvoHighs.value = evoHighs;
 
     // Render
     composer.render();

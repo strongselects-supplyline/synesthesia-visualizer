@@ -119,7 +119,7 @@ body {
 
     /* Scrollbar styling */
     scrollbar-width: thin;
-    scrollbar-color: rgba(255,255,255,0.1) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
 }
 
 .panel-inner::-webkit-scrollbar {
@@ -127,7 +127,7 @@ body {
 }
 
 .panel-inner::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 2px;
 }
 
@@ -400,6 +400,34 @@ body {
     letter-spacing: 1px;
 }
 
+/* --- Key Detection Readout --- */
+
+.key-readout {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.04);
+    margin-top: 4px;
+}
+
+.key-label {
+    font-size: 0.64rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+.key-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    letter-spacing: 0.5px;
+    transition: color 0.4s ease;
+}
+
 /* ============================================================
    PLAYBACK STATUS
    ============================================================ */
@@ -488,8 +516,13 @@ body {
 }
 
 @keyframes pulse-glow {
-    from { box-shadow: 0 0 4px rgba(240, 160, 48, 0.2); }
-    to   { box-shadow: 0 0 14px rgba(240, 160, 48, 0.4); }
+    from {
+        box-shadow: 0 0 4px rgba(240, 160, 48, 0.2);
+    }
+
+    to {
+        box-shadow: 0 0 14px rgba(240, 160, 48, 0.4);
+    }
 }
 
 /* ============================================================

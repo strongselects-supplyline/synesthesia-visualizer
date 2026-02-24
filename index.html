@@ -8,7 +8,9 @@
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Outfit:wght@300;500;700&display=swap"
+        rel="stylesheet">
 
     <script type="importmap">
     {
@@ -73,6 +75,10 @@
                     <span class="beat-dot" id="beatDot"></span>
                     <span id="bpmDisplay" class="bpm-value">— BPM</span>
                 </div>
+                <div class="key-readout">
+                    <span class="key-label">Detected Key</span>
+                    <span id="detectedKeyDisplay" class="key-value">Listening...</span>
+                </div>
             </div>
 
             <!-- Parameters -->
@@ -101,7 +107,8 @@
             </div>
 
             <div class="panel-footer">
-                <span class="footer-hint"><span class="hint-key">F</span> fullscreen · <span class="hint-key">TAB</span> hide</span>
+                <span class="footer-hint"><span class="hint-key">F</span> fullscreen · <span class="hint-key">TAB</span>
+                    hide</span>
             </div>
         </div>
     </div>
