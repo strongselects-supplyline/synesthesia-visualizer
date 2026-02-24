@@ -95,12 +95,10 @@ let keyVotes = {};
 let totalKeyVotes = 0;
 const VOTE_DECAY = 0.99;
 
-// Key profiles optimized for pop/electronic music
-// Heavily weighted toward tonic (10) and dominant/fifth (7)
-// Clear zeros on non-scale tones for sharper key discrimination
-// Format: [1, b2, 2, b3, 3, 4, b5, 5, b6, 6, b7, 7]
-const MAJOR_PROFILE = [10.0, 0.0, 3.0, 0.0, 5.0, 3.5, 0.0, 7.0, 0.0, 2.5, 0.0, 2.0];
-const MINOR_PROFILE = [10.0, 0.0, 2.5, 5.0, 0.0, 3.5, 0.0, 7.0, 3.0, 0.0, 2.5, 0.0];
+// Temperley key profiles — empirically calibrated on real pop/rock music
+// These outperform K-S on modern popular music in peer-reviewed studies
+const MAJOR_PROFILE = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0];
+const MINOR_PROFILE = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
 const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
 // Synesthesia hex map — Ethan Payton's Personal System
