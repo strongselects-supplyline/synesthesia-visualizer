@@ -130,7 +130,7 @@ function initAudio() {
 
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
+    analyser.fftSize = 4096;  // higher resolution for accurate chromagram pitch detection
     analyser.smoothingTimeConstant = 0.2;
     bufferLength = analyser.frequencyBinCount;
     dataArray = new Uint8Array(bufferLength);
