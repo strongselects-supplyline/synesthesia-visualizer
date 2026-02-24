@@ -94,33 +94,36 @@ const washMaterial = new THREE.ShaderMaterial({
 
             // === BASS ZONE (bottom center) ===
             // Warm glow anchored to bottom center, expands with sub-bass
-            float bassRadius = 0.3 + pow(uSubBass, 1.5) * 0.7;
+            // Organic wobble so the glow breathes rather than snapping
+            float bassWobble = sin(uTime * 0.8 + x * 3.0) * 0.04;
+            float bassRadius = 0.35 + pow(uSubBass, 1.5) * 0.55 + bassWobble;
             float bassDist = length(vec2(x - 0.5, y * 1.8)); // squashed vertically, centered low
             float bassGlow = 1.0 - smoothstep(0.0, bassRadius, bassDist);
-            bassGlow = pow(bassGlow, 1.6);
+            bassGlow = pow(bassGlow, 1.8); // slightly softer falloff
 
             // Bass color: warmer, more saturated version of the key color
-            vec3 bassColor = uColor * 1.3 + vec3(0.1, 0.02, 0.0);
+            vec3 bassColor = uColor * 1.2 + vec3(0.08, 0.02, 0.0);
 
             // === MID ZONE (center field) ===
             float midY = abs(y - 0.5); // distance from vertical center
-            float midGlow = (1.0 - smoothstep(0.0, 0.5, midY)) * uMids * 0.4;
+            float midWave = sin(uTime * 0.6 + x * 4.0) * 0.03; // gentle wave
+            float midGlow = (1.0 - smoothstep(0.0, 0.55 + midWave, midY)) * uMids * 0.35;
 
             // === HIGH ZONE (top + edges) ===
-            float highGlow = y * uHighs * 0.15; // brighter toward top
-            highGlow += centerX * uHighs * 0.08; // shimmer at edges
+            float highGlow = y * uHighs * 0.12; // brighter toward top
+            highGlow += centerX * uHighs * 0.06; // shimmer at edges
 
-            // === BEAT FLASH (white-hot center burst) ===
+            // === BEAT FLASH (softened — warm pulse, not strobe) ===
             float flashDist = length(vec2(x - 0.5, (y - 0.3) * 1.5));
-            float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.6, flashDist));
+            float flash = uBeatFlash * (1.0 - smoothstep(0.0, 0.75, flashDist));
             flash = pow(flash, 1.5);
 
             // Compose
             vec3 col = bg;
-            col += bassColor * bassGlow * uForge * 0.6;
+            col += bassColor * bassGlow * uForge * 0.55;
             col += uColor * midGlow * uForge;
             col += vec3(0.7, 0.8, 1.0) * highGlow * uForge;
-            col += vec3(1.0, 0.97, 0.92) * flash * 0.8;
+            col += vec3(1.0, 0.97, 0.92) * flash * 0.5; // gentler flash
 
             // Vignette
             float vignette = 1.0 - pow(length(vUv - 0.5) * 1.3, 2.5);
@@ -191,24 +194,24 @@ const bassMat = new THREE.ShaderMaterial({
         void main() {
             vec3 pos = position;
 
-            // Slow, heavy oscillation
-            float phase = aPhase + uTime * 0.3;
-            pos.x += sin(phase) * 2.0;
-            pos.y += cos(phase * 0.5) * 1.0;
+            // Slow, heavy, curvy oscillation — organic feel
+            float phase = aPhase + uTime * 0.25;
+            pos.x += sin(phase) * 3.0 + sin(phase * 0.4 + 1.0) * 1.5;
+            pos.y += cos(phase * 0.5) * 1.5 + sin(phase * 0.3) * 0.8;
 
-            // Z-punch on beats: blast toward camera
-            pos.z += uBeatPunch * 20.0 * sin(aPhase * 2.0);
+            // Gentle Z-sway on beats (not harsh punch)
+            pos.z += uBeatPunch * 12.0 * sin(aPhase * 2.0 + uTime * 0.5);
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
 
-            // MASSIVE size scaling on bass
-            float bassScale = pow(uBass, 1.3) * 10.0;
-            float subScale = pow(uSubBass, 1.5) * 6.0;
-            float beatScale = uBeatPunch * 8.0;
+            // Size scaling on bass (slightly tamed)
+            float bassScale = pow(uBass, 1.3) * 7.0;
+            float subScale = pow(uSubBass, 1.5) * 4.0;
+            float beatScale = uBeatPunch * 5.0;
             float size = aSize * (1.0 + bassScale + subScale + beatScale);
             gl_PointSize = size * uPixelRatio * (55.0 / -mvPosition.z);
 
-            vAlpha = 0.15 + uBass * 0.6 + uBeatPunch * 0.4;
+            vAlpha = 0.12 + uBass * 0.45 + uBeatPunch * 0.25;
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -289,16 +292,16 @@ const midMat = new THREE.ShaderMaterial({
         void main() {
             vec3 pos = position;
 
-            // Flowing, organic motion
-            float phase = aPhase + uTime * 0.6;
-            pos.x += sin(phase * 1.1) * 3.0;
-            pos.y += cos(phase * 0.8) * 2.0;
-            pos.x += sin(uTime * 0.2 + aPhase) * 1.5; // drift
+            // Flowing, curvy, organic motion — multiple sine layers
+            float phase = aPhase + uTime * 0.45;
+            pos.x += sin(phase * 1.1) * 3.5 + cos(phase * 0.3 + 2.0) * 2.0;
+            pos.y += cos(phase * 0.7) * 2.5 + sin(phase * 0.4) * 1.2;
+            pos.x += sin(uTime * 0.15 + aPhase * 1.5) * 2.0; // slow drift
 
             vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
 
-            float midScale = pow(uMids, 1.2) * 5.0;
-            float size = aSize * (1.0 + midScale + uBeatPunch * 2.0);
+            float midScale = pow(uMids, 1.2) * 4.0;
+            float size = aSize * (1.0 + midScale + uBeatPunch * 1.5);
             gl_PointSize = size * uPixelRatio * (48.0 / -mvPosition.z);
 
             vAlpha = 0.1 + uMids * 0.45;
@@ -382,16 +385,18 @@ const highMat = new THREE.ShaderMaterial({
         void main() {
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
 
-            // Fast twinkle
-            float twinkle = sin(aPhase + uTime * 3.5) * 0.5 + 0.5;
+            // Gentle twinkle — slower, smoother
+            float twinkle = sin(aPhase + uTime * 2.0) * 0.5 + 0.5;
+            float twinkle2 = sin(aPhase * 1.3 + uTime * 1.4) * 0.5 + 0.5;
+            float combinedTwinkle = twinkle * 0.6 + twinkle2 * 0.4; // layered, less binary
 
-            // Sparkle POPS on highs
+            // Sparkle responds to highs (tamed)
             float highsPow = pow(uHighs, 1.3);
-            float size = aSize * (0.5 + twinkle * 0.5) * (1.0 + highsPow * 8.0 + uBeatPunch * 2.0);
+            float size = aSize * (0.6 + combinedTwinkle * 0.4) * (1.0 + highsPow * 5.0 + uBeatPunch * 1.0);
             gl_PointSize = size * uPixelRatio * (35.0 / -mvPosition.z);
 
-            // Sharp on/off feel for crystalline look
-            vAlpha = pow(twinkle, 2.0) * (0.15 + highsPow * 2.5);
+            // Softer alpha — no harsh on/off
+            vAlpha = pow(combinedTwinkle, 1.5) * (0.12 + highsPow * 1.5);
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -549,12 +554,13 @@ function animate() {
         mids = Math.sin(elapsed * 0.7) * 0.05 * intensity;
     }
 
-    beatFlashDecay *= 0.82;
-    beatPunchDecay *= 0.85;
+    // Slower decay = smoother transitions, less stroboscopic
+    beatFlashDecay *= 0.72;
+    beatPunchDecay *= 0.78;
 
-    // --- Bloom: beat-driven ---
+    // --- Bloom: beat-driven but capped for eye safety ---
     bloomPass.strength = audio.isActive
-        ? (0.3 + beatPunchDecay * 2.8 + bass * 0.6) * forgeStage
+        ? Math.min((0.3 + beatPunchDecay * 1.8 + bass * 0.4) * forgeStage, 2.5)
         : (0.3 + intensity * 0.3) * forgeStage;
 
     // --- Wash ---
