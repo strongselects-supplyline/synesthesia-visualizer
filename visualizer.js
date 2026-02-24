@@ -32,7 +32,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setClearColor(0x030810, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.3;
+renderer.toneMappingExposure = 1.0;
 
 const oldCanvas = document.getElementById('visualizerCanvas');
 renderer.domElement.id = 'visualizerCanvas';
@@ -228,7 +228,7 @@ const bassMat = new THREE.ShaderMaterial({
             float size = aSize * (1.0 + bassScale + subScale + beatScale);
             gl_PointSize = size * uPixelRatio * (55.0 / -mvPosition.z);
 
-            vAlpha = 0.12 + uBass * 0.45 + uBeatPunch * 0.25;
+            vAlpha = 0.08 + uBass * 0.3 + uBeatPunch * 0.15;
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -245,9 +245,9 @@ const bassMat = new THREE.ShaderMaterial({
             // Soft, thick falloff — heavy feel
             float alpha = pow(1.0 - d, 2.0) * vAlpha * uForge;
 
-            // Warmer tint for bass
-            vec3 col = uColor * 1.2 + vec3(0.08, 0.02, 0.0);
-            gl_FragColor = vec4(col, alpha);
+            // Warmer tint of synesthesia color — never pure white
+            vec3 col = uColor * 0.9 + vec3(0.12, 0.04, 0.0);
+            gl_FragColor = vec4(col, alpha * 0.7);
         }
     `,
     transparent: true,
@@ -321,7 +321,7 @@ const midMat = new THREE.ShaderMaterial({
             float size = aSize * (1.0 + midScale + uBeatPunch * 1.5);
             gl_PointSize = size * uPixelRatio * (48.0 / -mvPosition.z);
 
-            vAlpha = 0.1 + uMids * 0.45;
+            vAlpha = 0.07 + uMids * 0.3;
 
             gl_Position = projectionMatrix * mvPosition;
         }
@@ -335,8 +335,10 @@ const midMat = new THREE.ShaderMaterial({
             float d = length(gl_PointCoord - 0.5) * 2.0;
             if (d > 1.0) discard;
 
-            float alpha = (1.0 - d * d) * vAlpha * uForge;
-            gl_FragColor = vec4(uColor, alpha);
+            float alpha = (1.0 - d * d) * vAlpha * uForge * 0.65;
+            // Tint with synesthesia color — artistic, not clinical
+            vec3 col = uColor * 0.8 + vec3(0.1, 0.08, 0.12);
+            gl_FragColor = vec4(col, alpha);
         }
     `,
     transparent: true,
@@ -386,6 +388,7 @@ const highUniforms = {
     uBeatPunch: { value: 0.0 },
     uForge: { value: 1.0 },
     uEvoHighs: { value: 0.0 },
+    uColor: { value: currentColor.clone() },  // pass synesthesia color to sparkles
     uPixelRatio: { value: renderer.getPixelRatio() }
 };
 
@@ -416,13 +419,14 @@ const highMat = new THREE.ShaderMaterial({
             float size = aSize * (0.6 + combinedTwinkle * 0.4) * (1.0 + highsPow * 5.0 + uBeatPunch * 1.0) * evoScale;
             gl_PointSize = size * uPixelRatio * (35.0 / -mvPosition.z);
 
-            // Alpha: brighter during buildup, dimmer during breakdown
-            vAlpha = pow(combinedTwinkle, 1.5) * (0.12 + highsPow * 1.5 + max(uEvoHighs, 0.0) * 0.3);
+            // Alpha: softer overall — artistic, not blinding
+            vAlpha = pow(combinedTwinkle, 1.5) * (0.08 + highsPow * 0.8 + max(uEvoHighs, 0.0) * 0.15);
 
             gl_Position = projectionMatrix * mvPosition;
         }
     `,
     fragmentShader: `
+        uniform vec3 uColor;
         uniform float uForge;
         varying float vAlpha;
 
@@ -430,12 +434,11 @@ const highMat = new THREE.ShaderMaterial({
             float d = length(gl_PointCoord - 0.5) * 2.0;
             if (d > 1.0) discard;
 
-            // Sharp falloff — crystalline, not soft
-            float alpha = pow(1.0 - d, 3.0) * vAlpha * uForge;
+            float alpha = pow(1.0 - d, 3.0) * vAlpha * uForge * 0.6;
 
-            // Cool white with slight blue tint
-            vec3 col = vec3(0.9, 0.93, 1.0);
-            gl_FragColor = vec4(col, alpha);
+            // Cool-shifted synesthesia tint — colorful sparkle, not plain white
+            vec3 coolTint = uColor * 0.4 + vec3(0.45, 0.5, 0.65);
+            gl_FragColor = vec4(coolTint, alpha);
         }
     `,
     transparent: true,
@@ -617,8 +620,8 @@ function animate() {
 
     // --- Bloom: beat-driven but capped, slightly louder at higher song phase ---
     bloomPass.strength = audio.isActive
-        ? Math.min((0.3 + beatPunchDecay * 1.8 + bass * 0.4 + songPhase * 0.2) * forgeStage, 2.5)
-        : (0.3 + intensity * 0.3) * forgeStage;
+        ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage, 1.8)
+        : (0.25 + intensity * 0.2) * forgeStage;
 
     // --- Wash (with evolution uniforms) ---
     washUniforms.uTime.value = elapsed;
@@ -657,6 +660,7 @@ function animate() {
     highUniforms.uBeatPunch.value = beatPunchDecay;
     highUniforms.uForge.value = forgeStage;
     highUniforms.uEvoHighs.value = evoHighs;
+    highUniforms.uColor.value.copy(currentColor);
 
     // Render
     composer.render();
