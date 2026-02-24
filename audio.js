@@ -103,20 +103,26 @@ const MAJOR_PROFILE = [10.0, 0.0, 3.0, 0.0, 5.0, 3.5, 0.0, 7.0, 0.0, 2.5, 0.0, 2
 const MINOR_PROFILE = [10.0, 0.0, 2.5, 5.0, 0.0, 3.5, 0.0, 7.0, 3.0, 0.0, 2.5, 0.0];
 const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-// Synesthesia hex map (mirrors catalog.js)
+// Synesthesia hex map — Ethan Payton's Personal System
+// Includes both sharp and flat enharmonic equivalents
 const SYN_MAP = {
-    'C Major': '#00A3A3', 'A Minor': '#00A3A3',
-    'G Major': '#FFFFF0', 'E Minor': '#FFFFF0',
-    'D Major': '#E2D077', 'B Minor': '#E2D077',
-    'A Major': '#C4651D', 'F# Minor': '#C4651D',
-    'E Major': '#DA70D6', 'C# Minor': '#DA70D6',
-    'B Major': '#B0E0E6', 'G# Minor': '#B0E0E6',
-    'Gb Major': '#FFFAFA', 'Eb Minor': '#FFFAFA',
-    'Db Major': '#DAA520', 'Bb Minor': '#DAA520',
-    'Ab Major': '#884513', 'F Minor': '#884513',
-    'Eb Major': '#4B0082', 'C Minor': '#4B0082',
-    'Bb Major': '#A52A2A', 'G Minor': '#A52A2A',
-    'F Major': '#DC143C', 'D Minor': '#DC143C',
+    'C Major': '#00A3A3', 'A Minor': '#00A3A3',       // Teal
+    'G Major': '#FFFFF0', 'E Minor': '#FFFFF0',       // Cream
+    'D Major': '#E2D077', 'B Minor': '#E2D077',       // Muted Yellow
+    'A Major': '#C4651D', 'F# Minor': '#C4651D',      // Fox Brown
+    'E Major': '#DA70D6', 'C# Minor': '#DA70D6',      // Pink-Purple
+    'B Major': '#B0E0E6', 'G# Minor': '#B0E0E6',      // Baby Blue
+    'Gb Major': '#FFFAFA', 'F# Major': '#FFFAFA',     // Snow White (enharmonic pair)
+    'Eb Minor': '#FFFAFA',
+    'Db Major': '#DAA520', 'C# Major': '#DAA520',     // Goldenrod / GOLD (enharmonic pair)
+    'Bb Minor': '#DAA520',
+    'Ab Major': '#884513', 'G# Major': '#884513',     // Brown (enharmonic pair)
+    'F Minor': '#884513',
+    'Eb Major': '#4B0082', 'D# Major': '#4B0082',     // Dark Purple
+    'C Minor': '#4B0082',
+    'Bb Major': '#A52A2A', 'A# Major': '#A52A2A',     // Maroon
+    'G Minor': '#A52A2A',
+    'F Major': '#DC143C', 'D Minor': '#DC143C',       // Red
 };
 
 // --- DOM refs ---
@@ -459,11 +465,11 @@ function updateKeyDetection() {
                 }
             }
 
-            // Sub-bass: 60-180Hz — the root lives here
+            // Sub-bass: 100-180Hz (skip 60-100Hz where kick fundamentals live)
             const midFreq = (freqLow + freqHigh) / 2;
-            if (midFreq < 180) {
+            if (midFreq >= 100 && midFreq < 180) {
                 subBassChroma[pc] += energy;
-            } else if (midFreq < 400) {
+            } else if (midFreq >= 180 && midFreq < 400) {
                 bassChroma[pc] += energy;
             }
             fullChroma[pc] += energy;
@@ -472,10 +478,10 @@ function updateKeyDetection() {
 
     if (totalMagnitude < 1.0) return;
 
-    // SHORT-TERM chroma: 50% sub-bass + 30% bass + 20% full
+    // Weighted blend: sub-bass 2x (root), bass 3x (harmonic content), full 1x
     const rawChroma = new Float32Array(12);
     for (let i = 0; i < 12; i++) {
-        rawChroma[i] = subBassChroma[i] * 4.0 + bassChroma[i] * 2.0 + fullChroma[i] * 1.0;
+        rawChroma[i] = subBassChroma[i] * 2.0 + bassChroma[i] * 3.0 + fullChroma[i] * 1.0;
     }
 
     // === SHORT-TERM chroma (fast — reacts to current chord) ===
