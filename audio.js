@@ -79,12 +79,12 @@ const PHASE_HISTORY_SIZE = 450;  // every 4th frame = ~30s
 let phaseEnergyHistory = [];
 
 // --- Key Detection State ---
-const CHROMA_SMOOTH = 0.08;          // smoothing factor for chroma vector
+const CHROMA_SMOOTH = 0.18;          // smoothing factor for chroma vector (higher = faster response)
 let chromaVector = new Float32Array(12);  // C, C#, D, D#, E, F, F#, G, G#, A, A#, B
 let keyStableFrames = 0;
 let lastDetectedKey = '';
-const KEY_STABLE_THRESHOLD = 60;     // frames (~1s) key must be stable before accepting
-const KEY_CONFIDENCE_MIN = 0.55;
+const KEY_STABLE_THRESHOLD = 25;     // frames (~0.4s) key must be stable before accepting
+const KEY_CONFIDENCE_MIN = 0.3;
 
 // Krumhansl-Schmuckler key profiles
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -436,8 +436,8 @@ function updateKeyDetection() {
         }
     }
 
-    // Normalize confidence (correlation ranges roughly 0.3-0.95 in practice)
-    const confidence = Math.max(0, Math.min(1, (bestCorr - 0.3) / 0.6));
+    // Normalize confidence (correlation for musical audio typically 0.2-0.9)
+    const confidence = Math.max(0, Math.min(1, (bestCorr - 0.15) / 0.7));
 
     // Stability: only accept if consistent for KEY_STABLE_THRESHOLD frames
     if (bestKey === lastDetectedKey && confidence > KEY_CONFIDENCE_MIN) {
@@ -587,6 +587,16 @@ document.getElementById('modeLiveBtn').addEventListener('click', () => {
         catalogAudioEl.pause();
         catalogAudioEl.currentTime = 0;
     }
+    // Reset key detection state so we start fresh
+    chromaVector = new Float32Array(12);
+    keyStableFrames = 0;
+    lastDetectedKey = '';
+    window.audioData.detectedKey = '';
+    window.audioData.detectedHex = '';
+    window.audioData.keyConfidence = 0;
+    const keyEl = document.getElementById('detectedKeyDisplay');
+    if (keyEl) keyEl.textContent = 'Listening...';
+
     if (radioMic.checked && !window.audioData.isActive) {
         connectMic();
     } else if (window.audioData.isActive && !audioLoopId) {
