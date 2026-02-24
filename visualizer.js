@@ -1,262 +1,443 @@
-const canvas = document.getElementById('visualizerCanvas');
-const ctx = canvas.getContext('2d');
+// ============================================================
+// Synesthesia Visualizer — WebGL Render Engine v2.0
+// Three.js + Bloom Post-Processing + Beat-Reactive 3-Layer System
+// ============================================================
+
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// --- DOM Refs ---
 const trackSelector = document.getElementById('trackSelector');
 const hexDisplay = document.getElementById('hexDisplay');
 const intensitySlider = document.getElementById('intensitySlider');
 const forgeSlider = document.getElementById('forgeSlider');
-
 const modeCatalogBtn = document.getElementById('modeCatalogBtn');
 const modeLiveBtn = document.getElementById('modeLiveBtn');
 const catalogControls = document.getElementById('catalogControls');
 const liveAudioControls = document.getElementById('liveAudioControls');
 
-let width, height;
-let particles = [];
-let currentColor = '#2d3142'; // default, picks up from setTrack() on init
-let targetColor = currentColor;
+// --- State ---
+let currentColor = new THREE.Color('#2d3142');
+let targetColor = new THREE.Color('#2d3142');
 let intensity = 0.5;
-let forgeStage = 1.0; // 0.0 to 1.0 (The Forge concept slider)
+let forgeStage = 1.0;
+let currentMode = 'catalog'; // 'catalog' | 'live'
+// Expose for midi.js / audio.js
+window.currentMode = currentMode;
+window.setTrack = setTrack;
+window.intensity = intensity;
+window.forgeStage = forgeStage;
 
-// Application Modes: 'catalog' | 'live'
-let currentMode = 'catalog';
+// --- Three.js Core ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.z = 50;
 
-function init() {
-    // Populate dynamic track selector
-    if (typeof allLoveCatalog !== 'undefined') {
-        allLoveCatalog.forEach((track, index) => {
-            const option = document.createElement('option');
-            option.value = index;
-            option.textContent = `${track.trackNumber}. ${track.title} [${track.key}]`;
-            trackSelector.appendChild(option);
-        });
+const renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance'
+});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // High-DPI, capped at 2x
+renderer.setClearColor(0x061014, 1);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
 
-        // initial state
-        setTrack(0);
+// Replace the old canvas
+const oldCanvas = document.getElementById('visualizerCanvas');
+renderer.domElement.id = 'visualizerCanvas';
+renderer.domElement.style.cssText = oldCanvas.style.cssText || 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;';
+oldCanvas.parentNode.replaceChild(renderer.domElement, oldCanvas);
+
+// --- Bloom Post-Processing ---
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    0.8,   // bloom strength
+    0.4,   // radius
+    0.7    // threshold
+);
+composer.addPass(bloomPass);
+
+// ============================================================
+// LAYER 1: Background Wash (Full-screen shader quad)
+// ============================================================
+
+const washUniforms = {
+    uTime: { value: 0 },
+    uColor: { value: currentColor.clone() },
+    uPulse: { value: 0.0 },
+    uShake: { value: new THREE.Vector2(0, 0) },
+    uForge: { value: 1.0 },
+    uBeatFlash: { value: 0.0 },
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+};
+
+const washMaterial = new THREE.ShaderMaterial({
+    uniforms: washUniforms,
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform float uTime;
+        uniform vec3 uColor;
+        uniform float uPulse;
+        uniform vec2 uShake;
+        uniform float uForge;
+        uniform float uBeatFlash;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+
+        void main() {
+            vec2 center = vec2(0.5) + uShake;
+            float dist = distance(vUv, center);
+
+            // Breathing radius
+            float radius = 0.6 + uPulse * 0.3;
+
+            // Radial gradient falloff
+            float grad = 1.0 - smoothstep(0.0, radius, dist);
+            grad = pow(grad, 1.8); // tighter center
+
+            // Beat flash overlay
+            float flash = uBeatFlash * (1.0 - dist) * 0.4;
+
+            // Base color mixed with dark background
+            vec3 bg = vec3(0.024, 0.063, 0.078); // #061014
+            vec3 col = mix(bg, uColor, grad * uForge * 0.55 + flash);
+
+            gl_FragColor = vec4(col, 1.0);
+        }
+    `,
+    depthTest: false,
+    depthWrite: false
+});
+
+// Full-screen quad rendered BEHIND everything
+const washGeom = new THREE.PlaneGeometry(2, 2);
+const washMesh = new THREE.Mesh(washGeom, washMaterial);
+washMesh.renderOrder = -1;
+washMesh.frustumCulled = false;
+scene.add(washMesh);
+
+// ============================================================
+// LAYER 2: Mid-Field Bokeh (GPU Particle Points)
+// ============================================================
+
+const BOKEH_COUNT = 300;
+
+const bokehGeometry = new THREE.BufferGeometry();
+const bokehPositions = new Float32Array(BOKEH_COUNT * 3);
+const bokehSizes = new Float32Array(BOKEH_COUNT);
+const bokehPhases = new Float32Array(BOKEH_COUNT);
+const bokehSpeeds = new Float32Array(BOKEH_COUNT * 2); // vx, vy per particle
+
+function initBokehParticles() {
+    for (let i = 0; i < BOKEH_COUNT; i++) {
+        bokehPositions[i * 3]     = (Math.random() - 0.5) * 120; // x
+        bokehPositions[i * 3 + 1] = (Math.random() - 0.5) * 80;  // y
+        bokehPositions[i * 3 + 2] = (Math.random() - 0.5) * 30;  // z depth variation
+        bokehSizes[i] = Math.random() * 4.0 + 1.0;
+        bokehPhases[i] = Math.random() * Math.PI * 2;
+        bokehSpeeds[i * 2]     = (Math.random() - 0.5) * 0.04;   // vx
+        bokehSpeeds[i * 2 + 1] = -(Math.random() * 0.06 + 0.01); // vy (drift up)
+    }
+}
+initBokehParticles();
+
+bokehGeometry.setAttribute('position', new THREE.BufferAttribute(bokehPositions, 3));
+bokehGeometry.setAttribute('aSize', new THREE.BufferAttribute(bokehSizes, 1));
+bokehGeometry.setAttribute('aPhase', new THREE.BufferAttribute(bokehPhases, 1));
+
+const bokehUniforms = {
+    uTime: { value: 0 },
+    uColor: { value: currentColor.clone() },
+    uIntensity: { value: 0.5 },
+    uForge: { value: 1.0 },
+    uBassHit: { value: 0.0 },
+    uPixelRatio: { value: renderer.getPixelRatio() }
+};
+
+const bokehMaterial = new THREE.ShaderMaterial({
+    uniforms: bokehUniforms,
+    vertexShader: `
+        attribute float aSize;
+        attribute float aPhase;
+        uniform float uTime;
+        uniform float uIntensity;
+        uniform float uBassHit;
+        uniform float uPixelRatio;
+        varying float vAlpha;
+        varying float vDist;
+
+        void main() {
+            vec3 pos = position;
+
+            // Gentle oscillation
+            float phase = aPhase + uTime * 0.5;
+            pos.x += sin(phase) * 1.5;
+            pos.y += cos(phase * 0.7) * 0.8;
+
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+
+            // Size: base + intensity + bass reactive
+            float size = aSize * (1.0 + uIntensity * 2.0 + uBassHit * 3.0);
+            gl_PointSize = size * uPixelRatio * (50.0 / -mvPosition.z);
+
+            vAlpha = 0.15 + uIntensity * 0.25;
+            vDist = length(pos.xy) / 60.0;
+
+            gl_Position = projectionMatrix * mvPosition;
+        }
+    `,
+    fragmentShader: `
+        uniform vec3 uColor;
+        uniform float uForge;
+        varying float vAlpha;
+        varying float vDist;
+
+        void main() {
+            // Soft circle falloff
+            float d = length(gl_PointCoord - 0.5) * 2.0;
+            if (d > 1.0) discard;
+
+            float alpha = (1.0 - d * d) * vAlpha * uForge;
+            alpha *= smoothstep(1.0, 0.3, vDist); // fade at edges
+
+            gl_FragColor = vec4(uColor, alpha);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+});
+
+const bokehPoints = new THREE.Points(bokehGeometry, bokehMaterial);
+bokehPoints.renderOrder = 1;
+scene.add(bokehPoints);
+
+// ============================================================
+// LAYER 3: Foreground Sparkle (high-freq reactive)
+// ============================================================
+
+const SPARKLE_COUNT = 600;
+
+const sparkleGeometry = new THREE.BufferGeometry();
+const sparklePositions = new Float32Array(SPARKLE_COUNT * 3);
+const sparkleSizes = new Float32Array(SPARKLE_COUNT);
+const sparklePhases = new Float32Array(SPARKLE_COUNT);
+
+function initSparkleParticles() {
+    for (let i = 0; i < SPARKLE_COUNT; i++) {
+        sparklePositions[i * 3]     = (Math.random() - 0.5) * 140;
+        sparklePositions[i * 3 + 1] = (Math.random() - 0.5) * 100;
+        sparklePositions[i * 3 + 2] = (Math.random() - 0.5) * 20 + 5; // slightly forward
+        sparkleSizes[i] = Math.random() * 1.2 + 0.3;
+        sparklePhases[i] = Math.random() * Math.PI * 2;
+    }
+}
+initSparkleParticles();
+
+sparkleGeometry.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
+sparkleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sparkleSizes, 1));
+sparkleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(sparklePhases, 1));
+
+const sparkleUniforms = {
+    uTime: { value: 0 },
+    uHighs: { value: 0.0 },
+    uForge: { value: 1.0 },
+    uPixelRatio: { value: renderer.getPixelRatio() }
+};
+
+const sparkleMaterial = new THREE.ShaderMaterial({
+    uniforms: sparkleUniforms,
+    vertexShader: `
+        attribute float aSize;
+        attribute float aPhase;
+        uniform float uTime;
+        uniform float uHighs;
+        uniform float uPixelRatio;
+        varying float vAlpha;
+
+        void main() {
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+            // Twinkle
+            float twinkle = sin(aPhase + uTime * 2.0) * 0.5 + 0.5;
+
+            // Highs boost both size and brightness
+            float size = aSize * (1.0 + uHighs * 4.0) * (0.5 + twinkle * 0.5);
+            gl_PointSize = size * uPixelRatio * (40.0 / -mvPosition.z);
+
+            vAlpha = twinkle * (0.3 + uHighs * 1.5);
+
+            gl_Position = projectionMatrix * mvPosition;
+        }
+    `,
+    fragmentShader: `
+        uniform float uForge;
+        varying float vAlpha;
+
+        void main() {
+            float d = length(gl_PointCoord - 0.5) * 2.0;
+            if (d > 1.0) discard;
+
+            float alpha = (1.0 - d) * vAlpha * uForge;
+            gl_FragColor = vec4(1.0, 1.0, 1.0, alpha);
+        }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+});
+
+const sparklePoints = new THREE.Points(sparkleGeometry, sparkleMaterial);
+sparklePoints.renderOrder = 2;
+scene.add(sparklePoints);
+
+// ============================================================
+// PARTICLE MOTION (CPU-side position updates for bokeh drift)
+// ============================================================
+
+function updateBokehPositions(dt) {
+    const positions = bokehGeometry.attributes.position.array;
+    const audio = window.audioData;
+
+    // Forge behavior: low forge = chaotic / high forge = harmonious
+    const chaosMultiplier = 1.0 + (1.0 - forgeStage) * 3.0; // more chaos when raw
+    const speedBase = intensity * 2.5 + 0.3;
+
+    // Audio-reactive speed boost
+    let speedMult = speedBase;
+    if (currentMode === 'live' && audio.isActive) {
+        speedMult += audio.mids * 4.0;
     }
 
-    resize();
-    createParticles();
-    animate();
+    for (let i = 0; i < BOKEH_COUNT; i++) {
+        const ix = i * 3;
+        const iy = i * 3 + 1;
+
+        positions[ix]     += bokehSpeeds[i * 2] * speedMult * chaosMultiplier;
+        positions[iy] += bokehSpeeds[i * 2 + 1] * speedMult;
+
+        // Wrap around
+        if (positions[ix] < -65) positions[ix] = 65;
+        if (positions[ix] > 65) positions[ix] = -65;
+        if (positions[iy] < -45) {
+            positions[iy] = 45;
+            positions[ix] = (Math.random() - 0.5) * 120;
+        }
+    }
+
+    bokehGeometry.attributes.position.needsUpdate = true;
 }
+
+// ============================================================
+// CATALOG INIT
+// ============================================================
 
 function setTrack(index) {
-    const track = allLoveCatalog[index];
-    targetColor = track.synHex || '#2d3142';
+    const track = window.allLoveCatalog[index];
+    if (!track) return;
 
-    // Scale intensity (dynamically changing slider too)
+    targetColor.set(track.synHex || '#2d3142');
     intensity = track.intensity || 0.5;
     intensitySlider.value = Math.round(intensity * 100);
+    hexDisplay.textContent = track.synHex || '#2d3142';
+    document.documentElement.style.setProperty('--accent-color', track.synHex || '#47e6a6');
+}
+window.setTrack = setTrack;
 
-    hexDisplay.textContent = targetColor;
-    document.documentElement.style.setProperty('--accent-color', targetColor);
+function populateCatalog() {
+    if (typeof window.allLoveCatalog === 'undefined') return;
+    window.allLoveCatalog.forEach((track, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = `${track.trackNumber}. ${track.title} [${track.key}]`;
+        trackSelector.appendChild(option);
+    });
+    setTrack(0);
 }
 
-function resize() {
-    width = canvas.width = window.innerWidth;
-    height = canvas.height = window.innerHeight;
-}
+// ============================================================
+// ANIMATION LOOP
+// ============================================================
 
-window.addEventListener('resize', resize);
-
-// --- Layer 1: Background Wash ---
-function drawBackgroundWash() {
-    let t = Date.now() * 0.0005;
-    let pulseScale = 1 + Math.sin(t) * (0.1 * intensity);
-    let baseOpacity = 0.45; // Significantly higher base visibility
-
-    // Audio Reactivity (Sub-bass drives pulse scale heavily)
-    if (currentMode === 'live' && window.audioData && window.audioData.isActive) {
-        const sub = window.audioData.subBass / 255; // 0 to 1
-        pulseScale = 1 + (sub * 0.85); // Up to nearly double scale heartbeat
-        baseOpacity += (sub * 0.35); // Boost opacity on sub hits!
-    }
-
-    pulseScale *= forgeStage;
-
-    ctx.fillStyle = '#061014';
-    ctx.fillRect(0, 0, width, height);
-
-    const cx = width / 2;
-    const cy = height / 2;
-    // Shake effect on heavy sub
-    const xOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 12 * Math.sin(t * 15) : 0;
-    const yOffset = (currentMode === 'live' && window.audioData) ? (window.audioData.subBass / 255) * 12 * Math.cos(t * 15) : 0;
-
-    const radius = Math.max(width, height) * 0.8 * pulseScale;
-    const bgGradient = ctx.createRadialGradient(cx + xOffset, cy + yOffset, 0, cx + xOffset, cy + yOffset, radius);
-
-    // Opacity scales with pulse and audio hits
-    const rawAlpha = Math.floor(Math.min(baseOpacity, 1.0) * 255);
-    const alpha = rawAlpha.toString(16).padStart(2, '0');
-    bgGradient.addColorStop(0, currentColor + alpha);
-    bgGradient.addColorStop(1, 'transparent');
-
-    ctx.fillStyle = bgGradient;
-    ctx.fillRect(0, 0, width, height);
-}
-
-// --- Layer 2: Mid-Field Bokeh (Ambient Particles) ---
-class BokehParticle {
-    constructor() {
-        this.reset();
-    }
-
-    reset() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.size = Math.random() * 80 + 20;
-        this.baseSize = this.size;
-        this.vx = (Math.random() - 0.5) * 0.5;
-        this.vy = (Math.random() * -1) - 0.2;
-        this.opacity = Math.random() * 0.4 + 0.1;
-        this.phi = Math.random() * Math.PI * 2;
-    }
-
-    update() {
-        let speedMult = (intensity * 3 + 1);
-        let sizeMult = (15 * intensity);
-
-        if (currentMode === 'live' && window.audioData && window.audioData.isActive) {
-            // Mids drive speed
-            const mids = window.audioData.mids / 255;
-            speedMult += (mids * 5); // Spike speed on mids
-
-            // Bass drives size
-            const bass = window.audioData.bass / 255;
-            sizeMult += (bass * 50); // Inflate on bass bumps
-        }
-
-        this.x += this.vx * speedMult;
-        this.y += this.vy * speedMult;
-
-        if (this.x < -this.size) this.x = width + this.size;
-        if (this.x > width + this.size) this.x = -this.size;
-        if (this.y < -this.size) {
-            this.y = height + this.size;
-            this.x = Math.random() * width;
-        }
-
-        this.phi += 0.02;
-        this.size = this.baseSize + Math.sin(this.phi) * sizeMult;
-    }
-
-    draw() {
-        const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size);
-        const alpha = Math.floor((this.opacity * forgeStage) * 255).toString(16).padStart(2, '0');
-        gradient.addColorStop(0, currentColor + alpha);
-        gradient.addColorStop(1, 'transparent');
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, Math.max(this.size, 0.1), 0, Math.PI * 2);
-        ctx.fill();
-    }
-}
-
-// --- Layer 3: Foreground Sparkle (High Frequency / Static Shimmer) ---
-class SparkleParticle {
-    constructor() {
-        this.x = Math.random() * width;
-        this.y = Math.random() * height;
-        this.size = Math.random() * 2 + 0.5;
-        this.baseOpacity = Math.random() * 0.5 + 0.1;
-        this.phase = Math.random() * Math.PI * 2;
-        this.speed = Math.random() * 0.05 + 0.01;
-    }
-
-    draw() {
-        this.phase += this.speed;
-        let currentOpacity = this.baseOpacity + Math.sin(this.phase) * 0.3;
-        let pSize = this.size;
-
-        if (currentMode === 'live' && window.audioData && window.audioData.isActive) {
-            // Highs drive brightness and dramatic size bump of sparkles
-            const highs = window.audioData.highs / 255;
-            currentOpacity += (highs * 1.5); // Sparkle POP!
-            pSize += (highs * 3.5);
-        }
-
-        currentOpacity *= forgeStage;
-
-        if (currentOpacity > 0) {
-            ctx.fillStyle = '#ffffff';
-            ctx.globalAlpha = Math.min(currentOpacity, 1.0);
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, pSize, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
-        }
-    }
-}
-
-let bokehParticles = [];
-let sparkleParticles = [];
-
-function createParticles() {
-    bokehParticles = [];
-    sparkleParticles = [];
-
-    // Mid-field count depends on screen size (base 50 - 150)
-    const bokehCount = Math.floor((width * height) / 25000);
-    for (let i = 0; i < bokehCount; i++) {
-        bokehParticles.push(new BokehParticle());
-    }
-
-    // High frequency static shimmer layer (base 200 - 400)
-    const sparkleCount = Math.floor((width * height) / 8000);
-    for (let i = 0; i < sparkleCount; i++) {
-        sparkleParticles.push(new SparkleParticle());
-    }
-}
-
-function hexToRgb(hex) {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
-}
-
-function interpolateColor(color1, color2, factor) {
-    const rgb1 = hexToRgb(color1);
-    const rgb2 = hexToRgb(color2);
-
-    if (!rgb1 || !rgb2) return color2; // Fallback
-
-    const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * factor);
-    const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * factor);
-    const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * factor);
-
-    const toHex = (n) => n.toString(16).padStart(2, '0');
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
+const clock = new THREE.Clock();
+let beatFlashDecay = 0;
 
 function animate() {
-    // 1. Draw Background Wash
-    drawBackgroundWash();
+    requestAnimationFrame(animate);
 
-    // Smooth color transition logic
-    if (currentColor !== targetColor) {
-        currentColor = interpolateColor(currentColor, targetColor, 0.05);
+    const dt = clock.getDelta();
+    const elapsed = clock.getElapsedTime();
+    const audio = window.audioData;
+
+    // --- Color interpolation ---
+    currentColor.lerp(targetColor, 0.04);
+
+    // --- Audio-reactive values ---
+    let pulse = Math.sin(elapsed * 0.5) * 0.15 * intensity;
+    let shakeX = 0, shakeY = 0;
+    let bassHit = 0;
+    let highsVal = 0;
+
+    if (currentMode === 'live' && audio.isActive) {
+        pulse = audio.subBass * 0.8;
+        shakeX = audio.subBass * 0.015 * Math.sin(elapsed * 15);
+        shakeY = audio.subBass * 0.015 * Math.cos(elapsed * 15);
+        bassHit = audio.bass;
+        highsVal = audio.highs;
+
+        // Beat flash
+        if (audio.isBeat) {
+            beatFlashDecay = audio.beatIntensity;
+        }
     }
 
-    // 2. Draw Mid-field Layer (Bokeh)
-    bokehParticles.forEach(p => {
-        p.update();
-        p.draw();
-    });
+    beatFlashDecay *= 0.88; // quick decay
 
-    // 3. Draw Foreground Layer (Sparkle/Shimmer)
-    sparkleParticles.forEach(p => {
-        // We will tie density/brightness to high-frequency audio later
-        p.draw();
-    });
+    // --- Update Bloom based on energy + forge ---
+    bloomPass.strength = 0.5 + (audio.isActive ? audio.energy * 1.5 : intensity * 0.5);
+    bloomPass.strength *= forgeStage;
 
-    requestAnimationFrame(animate);
+    // --- Update Layer 1: Wash ---
+    washUniforms.uTime.value = elapsed;
+    washUniforms.uColor.value.copy(currentColor);
+    washUniforms.uPulse.value = pulse;
+    washUniforms.uShake.value.set(shakeX, shakeY);
+    washUniforms.uForge.value = forgeStage;
+    washUniforms.uBeatFlash.value = beatFlashDecay;
+
+    // --- Update Layer 2: Bokeh ---
+    updateBokehPositions(dt);
+    bokehUniforms.uTime.value = elapsed;
+    bokehUniforms.uColor.value.copy(currentColor);
+    bokehUniforms.uIntensity.value = intensity;
+    bokehUniforms.uForge.value = forgeStage;
+    bokehUniforms.uBassHit.value = bassHit;
+
+    // --- Update Layer 3: Sparkle ---
+    sparkleUniforms.uTime.value = elapsed;
+    sparkleUniforms.uHighs.value = highsVal;
+    sparkleUniforms.uForge.value = forgeStage;
+
+    // --- Render with bloom ---
+    composer.render();
 }
 
-// --- Event Listeners ---
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
 
 trackSelector.addEventListener('change', (e) => {
     if (currentMode === 'catalog') setTrack(e.target.value);
@@ -264,52 +445,88 @@ trackSelector.addEventListener('change', (e) => {
 
 intensitySlider.addEventListener('input', (e) => {
     intensity = e.target.value / 100;
+    window.intensity = intensity;
 });
 
 forgeSlider.addEventListener('input', (e) => {
     forgeStage = e.target.value / 100;
-    // Forge stage controls global opacity mix - 0 is completely dark (raw), 1 is vivid
-    document.documentElement.style.setProperty('--glass-blur', `blur(${16 * forgeStage}px)`);
+    window.forgeStage = forgeStage;
 });
 
 modeCatalogBtn.addEventListener('click', () => {
     currentMode = 'catalog';
+    window.currentMode = 'catalog';
     modeCatalogBtn.classList.add('active');
     modeLiveBtn.classList.remove('active');
-    catalogControls.classList.remove('hidden');
+
+    // Smooth transition: fade controls
+    catalogControls.style.opacity = '0';
     liveAudioControls.classList.add('hidden');
+    catalogControls.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        catalogControls.style.transition = 'opacity 0.4s ease';
+        catalogControls.style.opacity = '1';
+    });
 });
 
 modeLiveBtn.addEventListener('click', () => {
     currentMode = 'live';
+    window.currentMode = 'live';
     modeLiveBtn.classList.add('active');
     modeCatalogBtn.classList.remove('active');
-    liveAudioControls.classList.remove('hidden');
+
+    liveAudioControls.style.opacity = '0';
     catalogControls.classList.add('hidden');
+    liveAudioControls.classList.remove('hidden');
+    requestAnimationFrame(() => {
+        liveAudioControls.style.transition = 'opacity 0.4s ease';
+        liveAudioControls.style.opacity = '1';
+    });
 });
 
-// Stage Mode / Performance Fullscreen
+// Stage Mode / Fullscreen
 document.addEventListener('keydown', (e) => {
     if (e.key.toLowerCase() === 'f') {
         const overlay = document.querySelector('.ui-overlay');
-
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch((err) => {
-                console.error(`Error attempting to enable fullscreen: ${err.message}`);
+            document.documentElement.requestFullscreen().catch(err => {
+                console.error('Fullscreen error:', err.message);
             });
-            overlay.classList.add('hidden'); // Hide all UI chrome
+            overlay.style.transition = 'opacity 0.5s ease';
+            overlay.style.opacity = '0';
+            setTimeout(() => overlay.classList.add('hidden'), 500);
         } else {
             document.exitFullscreen();
-            overlay.classList.remove('hidden'); // Restore UI
         }
     }
 });
 
-// Also restore UI if they press ESC to exit fullscreen naturally
 document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) {
-        document.querySelector('.ui-overlay').classList.remove('hidden');
+        const overlay = document.querySelector('.ui-overlay');
+        overlay.classList.remove('hidden');
+        overlay.style.opacity = '0';
+        requestAnimationFrame(() => {
+            overlay.style.transition = 'opacity 0.5s ease';
+            overlay.style.opacity = '1';
+        });
     }
 });
 
-init();
+// Resize
+window.addEventListener('resize', () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+    washUniforms.uResolution.value.set(w, h);
+});
+
+// ============================================================
+// INIT
+// ============================================================
+
+populateCatalog();
+animate();

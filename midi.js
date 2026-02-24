@@ -1,101 +1,262 @@
-// Synesthesia Visualizer - Web MIDI API Integration
+// ============================================================
+// Synesthesia Visualizer — MIDI Engine v2.0
+// MIDI Learn + Dynamic CC Mapping + AKAI Defaults
+// ============================================================
 
 let midiAccess = null;
-let midiInputs = [];
 
-// Default AKAI Fire / Class-Compliant mappings (CC numbers)
+// --- Default AKAI mappings (user can override via MIDI Learn) ---
 let ccMap = {
-    intensity: 1,      // CC1: Particle Intensity
-    bloom: 2,          // CC2: Bloom Radius / Forge Stage 
-    temperature: 3,    // CC3: Color Temp / Hue shift (TBD)
-    particleCount: 4,  // CC4: Particle Density multiplier (TBD)
-    pulseSpeed: 5,     // CC5: Background Pulse Speed (TBD)
-    masterBright: 7    // CC7: Master Brightness/Opacity
+    intensity:    { cc: 1,  label: 'Intensity' },
+    bloom:        { cc: 2,  label: 'Bloom / Forge' },
+    temperature:  { cc: 3,  label: 'Color Warmth' },
+    particleDensity: { cc: 4, label: 'Particle Density' },
+    pulseSpeed:   { cc: 5,  label: 'Pulse Speed' },
+    masterBright: { cc: 7,  label: 'Master Brightness' }
 };
 
-function initMIDI() {
-    if (navigator.requestMIDIAccess) {
-        navigator.requestMIDIAccess().then(onMIDISuccess, onMIDIFailure);
-    } else {
-        console.warn("Web MIDI API not supported in this browser.");
-    }
-}
+// --- MIDI Learn State ---
+let midiLearnActive = false;
+let midiLearnTarget = null; // which parameter key we're learning for
 
-function onMIDISuccess(access) {
-    midiAccess = access;
-    console.log("MIDI Ready!");
-
-    // Attach listeners to all available inputs
-    for (let input of midiAccess.inputs.values()) {
-        input.onmidimessage = handleMIDIMessage;
-        midiInputs.push(input);
-    }
-
-    // Handle devices plugging in and out
-    midiAccess.onstatechange = (e) => {
-        if (e.port.type === "input" && e.port.state === "connected") {
-            e.port.onmidimessage = handleMIDIMessage;
+// Persist mappings in localStorage
+function saveMappings() {
+    try {
+        const data = {};
+        for (const [key, val] of Object.entries(ccMap)) {
+            data[key] = val.cc;
         }
-    };
+        localStorage.setItem('syn_midi_map', JSON.stringify(data));
+    } catch (e) { /* localStorage not available */ }
 }
 
-function onMIDIFailure(err) {
-    console.error("Failed to get MIDI access", err);
+function loadMappings() {
+    try {
+        const raw = localStorage.getItem('syn_midi_map');
+        if (raw) {
+            const data = JSON.parse(raw);
+            for (const [key, cc] of Object.entries(data)) {
+                if (ccMap[key]) ccMap[key].cc = cc;
+            }
+        }
+    } catch (e) { /* fallback to defaults */ }
 }
+
+// ============================================================
+// MIDI LEARN UI
+// ============================================================
+
+function buildMidiLearnUI() {
+    const container = document.getElementById('midiLearnContainer');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    for (const [key, mapping] of Object.entries(ccMap)) {
+        const row = document.createElement('div');
+        row.className = 'midi-learn-row';
+
+        const label = document.createElement('span');
+        label.className = 'midi-learn-label';
+        label.textContent = mapping.label;
+
+        const ccDisplay = document.createElement('span');
+        ccDisplay.className = 'midi-learn-cc';
+        ccDisplay.id = `midi-cc-${key}`;
+        ccDisplay.textContent = `CC${mapping.cc}`;
+
+        const learnBtn = document.createElement('button');
+        learnBtn.className = 'glass-btn midi-learn-btn';
+        learnBtn.textContent = 'Learn';
+        learnBtn.id = `midi-learn-${key}`;
+        learnBtn.addEventListener('click', () => startLearn(key, learnBtn));
+
+        row.appendChild(label);
+        row.appendChild(ccDisplay);
+        row.appendChild(learnBtn);
+        container.appendChild(row);
+    }
+}
+
+function startLearn(paramKey, btnEl) {
+    // Cancel any previous learn
+    cancelLearn();
+
+    midiLearnActive = true;
+    midiLearnTarget = paramKey;
+
+    btnEl.classList.add('learning');
+    btnEl.textContent = '⏳ Twist a knob...';
+
+    // Timeout after 8 seconds
+    window._midiLearnTimeout = setTimeout(() => cancelLearn(), 8000);
+}
+
+function cancelLearn() {
+    midiLearnActive = false;
+    midiLearnTarget = null;
+    clearTimeout(window._midiLearnTimeout);
+
+    // Reset all learn buttons
+    document.querySelectorAll('.midi-learn-btn').forEach(btn => {
+        btn.classList.remove('learning');
+        btn.textContent = 'Learn';
+    });
+}
+
+function completeLearn(cc) {
+    if (!midiLearnTarget) return;
+
+    ccMap[midiLearnTarget].cc = cc;
+
+    // Update UI
+    const ccEl = document.getElementById(`midi-cc-${midiLearnTarget}`);
+    if (ccEl) ccEl.textContent = `CC${cc}`;
+
+    saveMappings();
+    cancelLearn();
+}
+
+// ============================================================
+// MIDI MESSAGE HANDLING
+// ============================================================
 
 function handleMIDIMessage(message) {
     const data = message.data;
-    const command = data[0] >> 4;
-    const channel = data[0] & 0xf;
     const type = data[0] & 0xf0;
-
     const noteOrCC = data[1];
-    const velocityOrValue = data[2];
+    const value = data[2];
 
-    // Control Change (Knobs / Faders)
-    if (type === 176) {
-        handleCCMessage(noteOrCC, velocityOrValue);
+    // --- Control Change ---
+    if (type === 0xb0) {
+        // If we're in MIDI Learn mode, capture this CC
+        if (midiLearnActive && midiLearnTarget) {
+            completeLearn(noteOrCC);
+            return;
+        }
+
+        handleCC(noteOrCC, value);
     }
 
-    // Note On (Pads)
-    if (type === 144 && velocityOrValue > 0) {
-        handleNoteOn(noteOrCC, velocityOrValue);
+    // --- Note On (pads → catalog tracks) ---
+    if (type === 0x90 && value > 0) {
+        handleNoteOn(noteOrCC, value);
     }
 }
 
-function handleCCMessage(cc, value) {
-    // Value is 0-127. Normalize it for our systems.
+function handleCC(cc, value) {
     const normalized = value / 127;
 
-    switch (cc) {
-        case ccMap.intensity:
-            intensity = normalized * 2; // Map 0-127 to 0-2 scale for visualizer
-            document.getElementById('intensitySlider').value = Math.round(intensity * 50);
-            break;
-        case ccMap.bloom:
-            forgeStage = normalized; // Wire CC2 straight to Forge / Bloom mix
-            document.getElementById('forgeSlider').value = Math.round(forgeStage * 100);
-            document.documentElement.style.setProperty('--glass-blur', `blur(${16 * forgeStage}px)`);
-            break;
-        case ccMap.masterBright:
-            document.querySelector('.ui-overlay').style.opacity = normalized;
-            break;
+    // Find which parameter this CC is mapped to
+    for (const [key, mapping] of Object.entries(ccMap)) {
+        if (mapping.cc !== cc) continue;
+
+        switch (key) {
+            case 'intensity':
+                window.intensity = normalized;
+                const intensitySlider = document.getElementById('intensitySlider');
+                if (intensitySlider) intensitySlider.value = Math.round(normalized * 100);
+                break;
+
+            case 'bloom':
+                window.forgeStage = normalized;
+                const forgeSlider = document.getElementById('forgeSlider');
+                if (forgeSlider) forgeSlider.value = Math.round(normalized * 100);
+                break;
+
+            case 'masterBright':
+                const overlay = document.querySelector('.ui-overlay');
+                if (overlay) overlay.style.opacity = normalized;
+                break;
+
+            case 'temperature':
+                // Color temperature shift: warm (low) ↔ cool (high)
+                // This shifts the hue of the current color slightly
+                window._midiColorTemp = (normalized - 0.5) * 2; // -1 to 1
+                break;
+
+            case 'particleDensity':
+                window._midiParticleDensity = normalized;
+                break;
+
+            case 'pulseSpeed':
+                window._midiPulseSpeed = normalized;
+                break;
+        }
+
+        // Visual feedback: flash the CC display
+        const ccEl = document.getElementById(`midi-cc-${key}`);
+        if (ccEl) {
+            ccEl.style.color = '#47e6a6';
+            setTimeout(() => { ccEl.style.color = ''; }, 150);
+        }
     }
 }
 
 function handleNoteOn(note, velocity) {
-    // Map Pads roughly starting around note 36 or 48 (AKAI defaults)
-    // If we assume notes 36-46 trigger catalog tracks 1-11
     const baseNote = 36;
-    if (note >= baseNote && note < baseNote + allLoveCatalog.length) {
-        const trackIndex = note - baseNote;
+    if (typeof window.allLoveCatalog !== 'undefined' &&
+        note >= baseNote &&
+        note < baseNote + window.allLoveCatalog.length) {
 
-        // Only trigger track changes if in catalog mode
-        if (currentMode === 'catalog') {
+        const trackIndex = note - baseNote;
+        if (window.currentMode === 'catalog' && typeof window.setTrack === 'function') {
             document.getElementById('trackSelector').value = trackIndex;
-            setTrack(trackIndex);
+            window.setTrack(trackIndex);
         }
     }
 }
 
-initMIDI();
+// ============================================================
+// INIT
+// ============================================================
+
+function initMIDI() {
+    if (!navigator.requestMIDIAccess) {
+        console.warn('Web MIDI API not supported');
+        return;
+    }
+
+    navigator.requestMIDIAccess()
+        .then(access => {
+            midiAccess = access;
+            console.log('MIDI Ready!');
+
+            // Connect all existing inputs
+            for (let input of midiAccess.inputs.values()) {
+                input.onmidimessage = handleMIDIMessage;
+            }
+
+            // Hot-plug support
+            midiAccess.onstatechange = (e) => {
+                if (e.port.type === 'input' && e.port.state === 'connected') {
+                    e.port.onmidimessage = handleMIDIMessage;
+                    console.log(`MIDI connected: ${e.port.name}`);
+                }
+            };
+
+            // Update status indicator
+            const statusEl = document.getElementById('midiStatus');
+            if (statusEl) {
+                statusEl.textContent = 'MIDI: Connected';
+                statusEl.classList.add('connected');
+            }
+        })
+        .catch(err => {
+            console.error('MIDI access failed:', err);
+        });
+}
+
+// Load saved mappings, build UI, init MIDI
+loadMappings();
+
+// Wait for DOM to be ready (this runs as a regular script before the module)
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        buildMidiLearnUI();
+        initMIDI();
+    });
+} else {
+    buildMidiLearnUI();
+    initMIDI();
+}

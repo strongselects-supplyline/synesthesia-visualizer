@@ -1,13 +1,20 @@
+/* ============================================================
+   Synesthesia Visualizer — Style v2.0
+   Glassmorphism + MIDI Learn + Beat Readout + Smooth Transitions
+   ============================================================ */
+
 :root {
     --bg-dark: #061014;
     --text-primary: rgba(255, 255, 255, 0.92);
-    --text-muted: rgba(255, 255, 255, 0.6);
+    --text-muted: rgba(255, 255, 255, 0.55);
     --accent-color: #47e6a6;
-    --glass-bg: rgba(255, 255, 255, 0.05);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --glass-blur: blur(16px);
+    --accent-glow: rgba(71, 230, 166, 0.25);
+    --glass-bg: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-blur: blur(20px);
     --font-main: 'Inter', sans-serif;
     --font-heading: 'Outfit', sans-serif;
+    --transition-smooth: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 * {
@@ -27,6 +34,7 @@ body {
     align-items: center;
 }
 
+/* Canvas / WebGL container */
 #visualizerCanvas {
     position: absolute;
     top: 0;
@@ -35,6 +43,10 @@ body {
     height: 100%;
     z-index: 1;
 }
+
+/* ============================================================
+   UI OVERLAY
+   ============================================================ */
 
 .ui-overlay {
     position: relative;
@@ -46,11 +58,16 @@ body {
     justify-content: space-between;
     padding: 40px;
     pointer-events: none;
+    transition: opacity 0.5s ease;
 }
 
-.ui-overlay>* {
+.ui-overlay > * {
     pointer-events: auto;
 }
+
+/* ============================================================
+   HEADER
+   ============================================================ */
 
 header {
     text-align: left;
@@ -70,60 +87,82 @@ header {
 }
 
 .subtitle {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 2px;
+    letter-spacing: 2.5px;
 }
+
+/* ============================================================
+   CONTROLS
+   ============================================================ */
 
 .controls-container {
     max-width: 400px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
 }
 
 .control-group {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    transition: opacity var(--transition-smooth);
 }
 
 .control-group label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
+
+/* --- Glass Select --- */
 
 .glass-select {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
     color: white;
     padding: 12px 16px;
     border-radius: 12px;
     font-family: var(--font-main);
-    font-size: 1rem;
+    font-size: 0.95rem;
     outline: none;
     cursor: pointer;
     transition: all 0.3s ease;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 6L11 1' stroke='rgba(255,255,255,0.5)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
 }
 
 .glass-select:focus {
     border-color: var(--accent-color);
-    box-shadow: 0 0 20px rgba(71, 230, 166, 0.2);
+    box-shadow: 0 0 20px var(--accent-glow);
 }
+
+.glass-select option {
+    background: #0d1b22;
+    color: white;
+}
+
+/* --- Glass Card --- */
 
 .glass-card {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     backdrop-filter: var(--glass-blur);
-    padding: 24px;
-    border-radius: 20px;
+    -webkit-backdrop-filter: var(--glass-blur);
+    padding: 20px;
+    border-radius: 16px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
 }
 
 .info-item {
@@ -133,101 +172,289 @@ header {
 }
 
 .info-item .label {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .info-item .value {
     font-family: 'Courier New', monospace;
     font-weight: 600;
+    font-size: 0.9rem;
     color: var(--accent-color);
 }
+
+/* --- Glass Range Slider (polished) --- */
 
 .glass-range {
     -webkit-appearance: none;
     appearance: none;
-    width: 60%;
-    background: rgba(255, 255, 255, 0.1);
-    height: 4px;
+    width: 55%;
+    background: rgba(255, 255, 255, 0.08);
+    height: 3px;
     border-radius: 2px;
     outline: none;
+    transition: background 0.3s ease;
+}
+
+.glass-range:hover {
+    background: rgba(255, 255, 255, 0.14);
 }
 
 .glass-range::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     background: var(--accent-color);
     border-radius: 50%;
     cursor: pointer;
-    box-shadow: 0 0 10px rgba(71, 230, 166, 0.5);
+    box-shadow: 0 0 8px var(--accent-glow), 0 0 20px rgba(71, 230, 166, 0.15);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
+
+.glass-range::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 12px var(--accent-glow), 0 0 30px rgba(71, 230, 166, 0.2);
+}
+
+.glass-range::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+/* --- Mode Toggles --- */
 
 .mode-toggles {
     display: flex;
-    gap: 10px;
-    margin-bottom: 5px;
+    gap: 8px;
+    margin-bottom: 4px;
 }
 
 .glass-btn {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
     color: var(--text-muted);
     padding: 10px 18px;
-    border-radius: 12px;
+    border-radius: 10px;
     font-family: var(--font-main);
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s ease;
     flex: 1;
+    text-align: center;
 }
 
 .glass-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
 }
 
 .glass-btn.active {
     color: white;
     border-color: var(--accent-color);
-    background: rgba(71, 230, 166, 0.1);
+    background: rgba(71, 230, 166, 0.08);
+    box-shadow: 0 0 15px rgba(71, 230, 166, 0.1);
 }
 
-.title-row {
-    margin-top: 10px;
-    border-top: 1px solid var(--glass-border);
-    padding-top: 15px;
+/* --- Upload Button --- */
+
+.upload-btn {
+    display: block;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
+    transition: all 0.3s ease;
 }
 
-.mt-3 {
-    margin-top: 15px;
+.upload-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(71, 230, 166, 0.05);
 }
 
-.mt-2 {
-    margin-top: 5px;
+.upload-filename {
+    font-size: 0.72rem;
+    color: var(--accent-color);
+    text-align: center;
+    min-height: 14px;
+    margin-top: 6px;
+    opacity: 0.8;
 }
 
-.hidden {
-    display: none !important;
-}
+/* --- Radio Group --- */
 
 .radio-group {
     display: flex;
-    gap: 15px;
-    font-size: 0.85rem;
+    gap: 14px;
+    font-size: 0.82rem;
     color: var(--text-primary);
+    align-items: center;
 }
 
 .radio-group input[type="radio"] {
     accent-color: var(--accent-color);
 }
 
-footer {
-    font-size: 0.75rem;
+/* --- Dividers --- */
+
+.title-row {
+    margin-top: 8px;
+    border-top: 1px solid var(--glass-border);
+    padding-top: 12px;
+}
+
+.mt-3 { margin-top: 15px; }
+.mt-2 { margin-top: 6px; }
+
+/* ============================================================
+   BEAT READOUT
+   ============================================================ */
+
+.beat-readout {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+}
+
+.beat-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    transition: background 0.08s ease, box-shadow 0.08s ease;
+}
+
+.beat-dot.flash {
+    background: var(--accent-color);
+    box-shadow: 0 0 12px var(--accent-color), 0 0 25px var(--accent-glow);
+}
+
+.bpm-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 1px;
 }
+
+/* ============================================================
+   MIDI PANEL + MIDI LEARN
+   ============================================================ */
+
+.midi-panel {
+    padding: 16px 20px;
+}
+
+.midi-status {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-family: 'Courier New', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.midi-status.connected {
+    color: var(--accent-color);
+}
+
+.midi-learn-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.midi-learn-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.midi-learn-row:last-child {
+    border-bottom: none;
+}
+
+.midi-learn-label {
+    flex: 1;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.midi-learn-cc {
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    min-width: 42px;
+    text-align: center;
+    transition: color 0.15s ease;
+}
+
+.midi-learn-btn {
+    flex: 0 0 auto;
+    padding: 4px 12px;
+    font-size: 0.68rem;
+    border-radius: 6px;
+}
+
+.midi-learn-btn.learning {
+    border-color: #f0a030;
+    color: #f0a030;
+    background: rgba(240, 160, 48, 0.08);
+    animation: pulse-glow 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-glow {
+    from { box-shadow: 0 0 4px rgba(240, 160, 48, 0.2); }
+    to   { box-shadow: 0 0 14px rgba(240, 160, 48, 0.4); }
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+
+footer {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.footer-hint {
+    opacity: 0.5;
+}
+
+.footer-hint kbd {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-family: var(--font-main);
+    font-size: 0.68rem;
+}
+
+/* ============================================================
+   VISIBILITY
+   ============================================================ */
+
+.hidden {
+    display: none !important;
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
 
 @media (max-width: 768px) {
     .ui-overlay {
@@ -240,5 +467,15 @@ footer {
 
     .controls-container {
         max-width: 100%;
+    }
+
+    .glass-range {
+        width: 50%;
+    }
+
+    footer {
+        flex-direction: column;
+        gap: 4px;
+        align-items: flex-start;
     }
 }
