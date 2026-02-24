@@ -84,8 +84,11 @@ let chromaVector = new Float32Array(12); // short-term (fast)
 
 // LONG-TERM chroma accumulator — sees the whole song, not just the current chord
 let longTermChroma = new Float32Array(12);
-const LONG_TERM_SMOOTH = 0.02;          // very slow: accumulates over ~10-20 seconds
-let longTermFrames = 0;                 // how many frames accumulated
+const LONG_TERM_SMOOTH = 0.02;
+let longTermFrames = 0;
+let longTermLockedKey = '';   // once locked, THIS is the song's identity
+let longTermLocked = false;
+const LONG_TERM_LOCK_FRAMES = 150; // ~2.5 seconds before locking
 
 // Short-term voting for ombré color nuance
 let keyVotes = {};
@@ -185,6 +188,8 @@ function resetKeyDetection() {
     chromaVector = new Float32Array(12);
     longTermChroma = new Float32Array(12);
     longTermFrames = 0;
+    longTermLockedKey = '';
+    longTermLocked = false;
     keyVotes = {};
     totalKeyVotes = 0;
     keyDebugTimer = 0;
@@ -557,10 +562,32 @@ function updateKeyDetection() {
     totalKeyVotes *= VOTE_DECAY;
 
     // --- DETERMINE PRIMARY KEY ---
-    // Use long-term if available (>30 frames), else fall back to short-term best guess
-    const primaryKey = (longBestKey && longTermFrames > 30) ? longBestKey : shortBestKey;
+    // Long-term layer locks the key after enough evidence (the SONG's identity)
+    // Short-term ombré builds around it
+
     const longConf = Math.max(0, Math.min(1, (longBestCorr + 1) / 2));
-    const primaryConf = (longTermFrames > 30) ? longConf : shortConf;
+
+    if (!longTermLocked && longBestKey && longTermFrames >= LONG_TERM_LOCK_FRAMES) {
+        longTermLockedKey = longBestKey;
+        longTermLocked = true;
+        console.log('[Key LOCKED]', longTermLockedKey, '| conf:', (longConf * 100).toFixed(0) + '%',
+            '| after', longTermFrames, 'frames',
+            '| hex:', SYN_MAP[longTermLockedKey] || 'none');
+    }
+
+    // Locked key is king. Before lock, use long-term if available, else short-term.
+    let primaryKey;
+    let primaryConf;
+    if (longTermLocked) {
+        primaryKey = longTermLockedKey;
+        primaryConf = longConf;
+    } else if (longBestKey && longTermFrames > 30) {
+        primaryKey = longBestKey;
+        primaryConf = longConf;
+    } else {
+        primaryKey = shortBestKey;
+        primaryConf = shortConf;
+    }
 
     // --- OMBRÉ COLOR: 70% primary key + 30% short-term top keys ---
     const primaryHex = SYN_MAP[primaryKey] || '';
@@ -617,7 +644,8 @@ function updateKeyDetection() {
     // Update UI display
     const keyEl = document.getElementById('detectedKeyDisplay');
     if (keyEl) {
-        keyEl.textContent = `${primaryKey} (${Math.round(primaryConf * 100)}%)`;
+        const icon = longTermLocked ? '🔒' : '🔍';
+        keyEl.textContent = `${icon} ${primaryKey} (${Math.round(primaryConf * 100)}%)`;
     }
 
     // Set audioData
