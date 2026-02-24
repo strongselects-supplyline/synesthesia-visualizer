@@ -79,21 +79,18 @@ const PHASE_HISTORY_SIZE = 450;  // every 4th frame = ~30s
 let phaseEnergyHistory = [];
 
 // --- Key Detection State ---
-const CHROMA_SMOOTH = 0.25;
-let chromaVector = new Float32Array(12);
-let keyStableFrames = 0;
-let lastDetectedKey = '';
-const KEY_STABLE_THRESHOLD = 10;     // frames (~0.17s) before first guess
-const KEY_CONFIDENCE_MIN = 0.3;
+const CHROMA_SMOOTH = 0.25;            // short-term chroma smoothing
+let chromaVector = new Float32Array(12); // short-term (fast)
 
-// Key VOTING system — accumulates evidence across the entire song
-let keyVotes = {};           // { 'A Major': 142, 'F# Minor': 89, ... }
+// LONG-TERM chroma accumulator — sees the whole song, not just the current chord
+let longTermChroma = new Float32Array(12);
+const LONG_TERM_SMOOTH = 0.02;          // very slow: accumulates over ~10-20 seconds
+let longTermFrames = 0;                 // how many frames accumulated
+
+// Short-term voting for ombré color nuance
+let keyVotes = {};
 let totalKeyVotes = 0;
-let lockedKey = '';          // once locked, this IS the song's key
-let keyIsLocked = false;
-const LOCK_THRESHOLD = 0.45;     // lock in when a key has 45% of all votes
-const OVERTURN_THRESHOLD = 0.50; // once locked, need 50% from a different key to change
-const VOTE_DECAY = 0.99;         // aggressive decay — only last ~1-2 seconds matter
+const VOTE_DECAY = 0.99;
 
 // Key profiles optimized for pop/electronic music
 // Heavily weighted toward tonic (10) and dominant/fifth (7)
@@ -186,12 +183,10 @@ function teardownSource() {
 
 function resetKeyDetection() {
     chromaVector = new Float32Array(12);
-    keyStableFrames = 0;
-    lastDetectedKey = '';
+    longTermChroma = new Float32Array(12);
+    longTermFrames = 0;
     keyVotes = {};
     totalKeyVotes = 0;
-    lockedKey = '';
-    keyIsLocked = false;
     keyDebugTimer = 0;
     window.audioData.detectedKey = '';
     window.audioData.detectedHex = '';
@@ -480,148 +475,163 @@ function updateKeyDetection() {
         rawChroma[i] = bassChroma[i] * 0.7 + fullChroma[i] * 0.3;
     }
 
-    // Smooth the chroma vector over time
+    // === SHORT-TERM chroma (fast — reacts to current chord) ===
     for (let i = 0; i < 12; i++) {
         chromaVector[i] = chromaVector[i] * (1 - CHROMA_SMOOTH) + rawChroma[i] * CHROMA_SMOOTH;
     }
 
-    // Normalize chroma vector
-    let chromaMax = 0;
+    // === LONG-TERM chroma (slow — accumulates the overall scale) ===
     for (let i = 0; i < 12; i++) {
-        if (chromaVector[i] > chromaMax) chromaMax = chromaVector[i];
+        longTermChroma[i] = longTermChroma[i] * (1 - LONG_TERM_SMOOTH) + rawChroma[i] * LONG_TERM_SMOOTH;
     }
-    if (chromaMax < 0.0001) return;
+    longTermFrames++;
 
-    const normalizedChroma = new Float32Array(12);
-    for (let i = 0; i < 12; i++) {
-        normalizedChroma[i] = chromaVector[i] / chromaMax;
+    // --- Normalize both chroma vectors ---
+    function normalizeChroma(chroma) {
+        let max = 0;
+        for (let i = 0; i < 12; i++) if (chroma[i] > max) max = chroma[i];
+        if (max < 0.0001) return null;
+        const norm = new Float32Array(12);
+        for (let i = 0; i < 12; i++) norm[i] = chroma[i] / max;
+        return norm;
     }
 
-    // Correlate against all 24 keys
-    let bestKey = '';
-    let bestCorr = -Infinity;
-    let secondBestKey = '';
-    let secondBestCorr = -Infinity;
+    const shortNorm = normalizeChroma(chromaVector);
+    const longNorm = normalizeChroma(longTermChroma);
+    if (!shortNorm) return;
+
+    // --- LONG-TERM KEY: correlate the accumulated chroma against all 24 keys ---
+    // This determines the SONG'S key — stable, slow to change, sees the whole picture
+    let longBestKey = '';
+    let longBestCorr = -Infinity;
+
+    if (longNorm && longTermFrames > 30) { // wait ~0.5s before trusting long-term
+        for (let root = 0; root < 12; root++) {
+            const majorCorr = correlate(longNorm, MAJOR_PROFILE, root);
+            const minorCorr = correlate(longNorm, MINOR_PROFILE, root);
+            if (majorCorr > longBestCorr) {
+                longBestCorr = majorCorr;
+                longBestKey = KEY_NAMES[root] + ' Major';
+            }
+            if (minorCorr > longBestCorr) {
+                longBestCorr = minorCorr;
+                longBestKey = KEY_NAMES[root] + ' Minor';
+            }
+        }
+    }
+
+    // --- SHORT-TERM KEY: correlate the fast chroma for current-moment detection ---
+    let shortBestKey = '';
+    let shortBestCorr = -Infinity;
 
     for (let root = 0; root < 12; root++) {
-        const majorCorr = correlate(normalizedChroma, MAJOR_PROFILE, root);
-        const minorCorr = correlate(normalizedChroma, MINOR_PROFILE, root);
-
-        if (majorCorr > bestCorr) {
-            secondBestCorr = bestCorr;
-            secondBestKey = bestKey;
-            bestCorr = majorCorr;
-            bestKey = KEY_NAMES[root] + ' Major';
-        } else if (majorCorr > secondBestCorr) {
-            secondBestCorr = majorCorr;
-            secondBestKey = KEY_NAMES[root] + ' Major';
+        const majorCorr = correlate(shortNorm, MAJOR_PROFILE, root);
+        const minorCorr = correlate(shortNorm, MINOR_PROFILE, root);
+        if (majorCorr > shortBestCorr) {
+            shortBestCorr = majorCorr;
+            shortBestKey = KEY_NAMES[root] + ' Major';
         }
-
-        if (minorCorr > bestCorr) {
-            secondBestCorr = bestCorr;
-            secondBestKey = bestKey;
-            bestCorr = minorCorr;
-            bestKey = KEY_NAMES[root] + ' Minor';
-        } else if (minorCorr > secondBestCorr) {
-            secondBestCorr = minorCorr;
-            secondBestKey = KEY_NAMES[root] + ' Minor';
+        if (minorCorr > shortBestCorr) {
+            shortBestCorr = minorCorr;
+            shortBestKey = KEY_NAMES[root] + ' Minor';
         }
     }
 
-    const confidence = Math.max(0, Math.min(1, (bestCorr + 1) / 2));
+    const shortConf = Math.max(0, Math.min(1, (shortBestCorr + 1) / 2));
 
-    // --- VOTING (no lock — pure rolling democracy) ---
-    const voteKey = bestKey;
-    const relatedKey = RELATIVE_MINOR_MAP[bestKey] || '';
-
-    const voteWeight = confidence * confidence;
-    if (!keyVotes[voteKey]) keyVotes[voteKey] = 0;
-    keyVotes[voteKey] += voteWeight;
+    // --- SHORT-TERM VOTING for ombré ---
+    const voteWeight = shortConf * shortConf;
+    if (!keyVotes[shortBestKey]) keyVotes[shortBestKey] = 0;
+    keyVotes[shortBestKey] += voteWeight;
+    const relatedKey = RELATIVE_MINOR_MAP[shortBestKey] || '';
     if (relatedKey) {
         if (!keyVotes[relatedKey]) keyVotes[relatedKey] = 0;
         keyVotes[relatedKey] += voteWeight * 0.5;
     }
     totalKeyVotes += voteWeight;
 
-    // Aggressive decay — only last ~1-2 seconds matter
     for (const key of Object.keys(keyVotes)) {
         keyVotes[key] *= VOTE_DECAY;
-        if (keyVotes[key] < 0.001) delete keyVotes[key]; // clean up dust
+        if (keyVotes[key] < 0.001) delete keyVotes[key];
     }
     totalKeyVotes *= VOTE_DECAY;
 
-    // --- COLLECT TOP KEYS BY VOTE GROUP ---
-    // Group related major/minor pairs, rank by combined votes
-    const groups = {};
-    for (const [key, votes] of Object.entries(keyVotes)) {
-        const related = RELATIVE_MINOR_MAP[key] || key;
-        // Use the alphabetically first as group ID to avoid double-counting
-        const groupId = key < related ? key : related;
-        if (!groups[groupId]) groups[groupId] = { keys: [], totalVotes: 0 };
-        if (!groups[groupId].keys.includes(key)) groups[groupId].keys.push(key);
-        groups[groupId].totalVotes += votes;
-    }
+    // --- DETERMINE PRIMARY KEY ---
+    // Use long-term if available (>30 frames), else fall back to short-term best guess
+    const primaryKey = (longBestKey && longTermFrames > 30) ? longBestKey : shortBestKey;
+    const longConf = Math.max(0, Math.min(1, (longBestCorr + 1) / 2));
+    const primaryConf = (longTermFrames > 30) ? longConf : shortConf;
 
-    // Sort groups by votes, take top 3
-    const ranked = Object.entries(groups)
-        .sort((a, b) => b[1].totalVotes - a[1].totalVotes)
-        .slice(0, 3);
-
-    if (ranked.length === 0 || totalKeyVotes < 0.1) return;
-
-    // --- OMBRÉ COLOR BLENDING ---
-    // Blend synesthesia colors weighted by each key group's vote share
+    // --- OMBRÉ COLOR: 70% primary key + 30% short-term top keys ---
+    const primaryHex = SYN_MAP[primaryKey] || '';
     let blendR = 0, blendG = 0, blendB = 0;
-    let totalWeight = 0;
-    let primaryKey = '';
-    let primaryPct = 0;
 
-    for (const [groupId, group] of ranked) {
-        const pct = group.totalVotes / totalKeyVotes;
-        // Pick the key in this group with a known hex
-        let hex = '';
-        let keyName = '';
-        for (const k of group.keys) {
-            if (SYN_MAP[k]) { hex = SYN_MAP[k]; keyName = k; break; }
+    if (primaryHex) {
+        const pRgb = hexToRgb(primaryHex);
+        blendR = pRgb.r * 0.7;
+        blendG = pRgb.g * 0.7;
+        blendB = pRgb.b * 0.7;
+
+        // Add 30% from short-term top 3 vote groups for ombré nuance
+        const groups = {};
+        for (const [key, votes] of Object.entries(keyVotes)) {
+            const rel = RELATIVE_MINOR_MAP[key] || key;
+            const gid = key < rel ? key : rel;
+            if (!groups[gid]) groups[gid] = { keys: [], totalVotes: 0 };
+            if (!groups[gid].keys.includes(key)) groups[gid].keys.push(key);
+            groups[gid].totalVotes += votes;
         }
-        if (!hex) continue;
 
-        const rgb = hexToRgb(hex);
-        blendR += rgb.r * pct;
-        blendG += rgb.g * pct;
-        blendB += rgb.b * pct;
-        totalWeight += pct;
+        const ranked = Object.entries(groups)
+            .sort((a, b) => b[1].totalVotes - a[1].totalVotes)
+            .slice(0, 3);
 
-        if (!primaryKey) { primaryKey = keyName; primaryPct = pct; }
+        let ombreR = 0, ombreG = 0, ombreB = 0, ombreTotal = 0;
+        for (const [gid, group] of ranked) {
+            const pct = totalKeyVotes > 0 ? group.totalVotes / totalKeyVotes : 0;
+            let hex = '';
+            for (const k of group.keys) { if (SYN_MAP[k]) { hex = SYN_MAP[k]; break; } }
+            if (!hex) continue;
+            const rgb = hexToRgb(hex);
+            ombreR += rgb.r * pct;
+            ombreG += rgb.g * pct;
+            ombreB += rgb.b * pct;
+            ombreTotal += pct;
+        }
+
+        if (ombreTotal > 0) {
+            blendR += (ombreR / ombreTotal) * 0.3;
+            blendG += (ombreG / ombreTotal) * 0.3;
+            blendB += (ombreB / ombreTotal) * 0.3;
+        } else {
+            blendR += pRgb.r * 0.3;
+            blendG += pRgb.g * 0.3;
+            blendB += pRgb.b * 0.3;
+        }
     }
 
-    if (totalWeight > 0) {
-        blendR /= totalWeight;
-        blendG /= totalWeight;
-        blendB /= totalWeight;
-    }
-
-    const blendedHex = rgbToHex(Math.round(blendR), Math.round(blendG), Math.round(blendB));
+    const blendedHex = primaryHex
+        ? rgbToHex(Math.round(blendR), Math.round(blendG), Math.round(blendB))
+        : '';
 
     // Update UI display
     const keyEl = document.getElementById('detectedKeyDisplay');
     if (keyEl) {
-        keyEl.textContent = `${primaryKey} (${Math.round(primaryPct * 100)}%)`;
+        keyEl.textContent = `${primaryKey} (${Math.round(primaryConf * 100)}%)`;
     }
 
-    // Set audioData — blended color for the visualizer
+    // Set audioData
     window.audioData.detectedKey = primaryKey;
-    window.audioData.keyConfidence = primaryPct;
-    window.audioData.detectedHex = blendedHex;
+    window.audioData.keyConfidence = primaryConf;
+    window.audioData.detectedHex = blendedHex || primaryHex;
 
     // Debug logging every 2 seconds
     keyDebugTimer++;
     if (keyDebugTimer % 120 === 0) {
-        const topKeys = ranked.map(([id, g]) => {
-            const k = g.keys.find(k => SYN_MAP[k]) || g.keys[0];
-            return `${k}:${Math.round(g.totalVotes / totalKeyVotes * 100)}%`;
-        }).join(' | ');
-        console.log('[Key Ombré]', topKeys, '→', blendedHex);
+        console.log('[Key]', 'LONG:', longBestKey, (longConf * 100).toFixed(0) + '%',
+            '| SHORT:', shortBestKey, (shortConf * 100).toFixed(0) + '%',
+            '| frames:', longTermFrames,
+            '| hex:', blendedHex || primaryHex);
     }
 }
 
