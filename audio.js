@@ -435,52 +435,53 @@ function updateKeyDetection() {
     const fftSize = analyser.fftSize;
     const binWidth = sampleRate / fftSize;
 
-    // PRE-COMPUTE SEMITONE BOUNDARIES — 3 TIERS:
-    // Sub-bass (60-180Hz): almost exclusively root notes — strongest signal for key
-    // Bass (180-400Hz): bass guitar upper register + low keys
-    // Full (60-4200Hz): everything
-    const subBassChroma = new Float32Array(12);
-    const bassChroma = new Float32Array(12);
-    const fullChroma = new Float32Array(12);
+    // === HARMONIC PRODUCT SPECTRUM CHROMAGRAM ===
+    // For each pitch class, check fundamental + harmonics (2x, 3x, 4x).
+    // Real notes have harmonics; drums/noise don't.
+    // This dramatically cleans up the chromagram for polyphonic music.
+    const hpsChroma = new Float32Array(12);
     let totalMagnitude = 0;
 
-    for (let octave = 2; octave <= 7; octave++) {
+    // Helper: get magnitude at a specific frequency from FFT data
+    function getMagAtFreq(freq) {
+        if (freq < 30 || freq > sampleRate / 2) return 0;
+        const bin = Math.round(freq / binWidth);
+        if (bin < 1 || bin >= bufferLength) return 0;
+        return dataArray[bin] / 255;
+    }
+
+    // For each pitch class across octaves 2-6 (65Hz to ~2kHz fundamentals)
+    for (let octave = 2; octave <= 6; octave++) {
         for (let pc = 0; pc < 12; pc++) {
             const midiNote = (octave + 1) * 12 + pc;
-            const freqLow = 440 * Math.pow(2, (midiNote - 0.5 - 69) / 12);
-            const freqHigh = 440 * Math.pow(2, (midiNote + 0.5 - 69) / 12);
-            if (freqHigh < 55 || freqLow > 4200) continue;
+            const fundamental = 440 * Math.pow(2, (midiNote - 69) / 12);
 
-            const binLow = Math.max(1, Math.floor(freqLow / binWidth));
-            const binHigh = Math.min(bufferLength - 1, Math.ceil(freqHigh / binWidth));
+            if (fundamental < 60 || fundamental > 2000) continue;
 
-            let energy = 0;
-            for (let b = binLow; b <= binHigh; b++) {
-                const mag = dataArray[b] / 255;
-                if (mag > 0.02) {
-                    energy += mag * mag * mag;
-                    totalMagnitude += mag;
-                }
-            }
+            // Get magnitude at fundamental and first 3 harmonics
+            const m1 = getMagAtFreq(fundamental);
+            const m2 = getMagAtFreq(fundamental * 2);
+            const m3 = getMagAtFreq(fundamental * 3);
+            const m4 = getMagAtFreq(fundamental * 4);
 
-            // Sub-bass: 65-180Hz (bass synths, 808s, bass guitar fundamentals)
-            const midFreq = (freqLow + freqHigh) / 2;
-            if (midFreq >= 65 && midFreq < 180) {
-                subBassChroma[pc] += energy;
-            } else if (midFreq >= 180 && midFreq < 400) {
-                bassChroma[pc] += energy;
-            }
-            fullChroma[pc] += energy;
+            if (m1 < 0.02) continue;
+            totalMagnitude += m1;
+
+            // Harmonic Product: geometric-ish mean that rewards harmonic presence
+            // If harmonics are present → real note → high score
+            // If no harmonics → drum/noise → low score
+            const harmonicBoost = 1.0 + (m2 > 0.01 ? 0.5 : 0) + (m3 > 0.01 ? 0.3 : 0) + (m4 > 0.01 ? 0.2 : 0);
+            const energy = m1 * m1 * harmonicBoost;
+
+            // Weight by octave: lower = more root-indicative
+            const octaveWeight = (octave <= 3) ? 2.5 : (octave <= 4) ? 1.5 : 1.0;
+            hpsChroma[pc] += energy * octaveWeight;
         }
     }
 
-    if (totalMagnitude < 1.0) return;
+    if (totalMagnitude < 0.5) return;
 
-    // Weighted blend: sub-bass 3x, bass 2x, full 1x
-    const rawChroma = new Float32Array(12);
-    for (let i = 0; i < 12; i++) {
-        rawChroma[i] = subBassChroma[i] * 3.0 + bassChroma[i] * 2.0 + fullChroma[i] * 1.0;
-    }
+    const rawChroma = hpsChroma;
 
     // === SHORT-TERM chroma (fast — reacts to current chord) ===
     for (let i = 0; i < 12; i++) {
