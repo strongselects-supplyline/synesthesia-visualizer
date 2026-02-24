@@ -555,12 +555,31 @@ body {
 }
 
 /* ============================================================
-   RESPONSIVE
+   EMBED MODE — ?embed=true  (Wix / superfan iframe / live)
+   ============================================================ */
+
+body.embed-mode .panel-hint,
+body.embed-mode .watermark,
+body.embed-mode #controlPanel {
+    display: none !important;
+}
+
+/* ============================================================
+   RESPONSIVE — Mobile
    ============================================================ */
 
 @media (max-width: 600px) {
+    :root {
+        --panel-width: 100vw;
+    }
+
     .control-panel {
         width: 100vw;
+        left: -100vw;
+    }
+
+    .control-panel.open {
+        left: 0;
     }
 
     .panel-inner {
@@ -569,5 +588,28 @@ body {
 
     .panel-title {
         font-size: 1.3rem;
+    }
+
+    /* Touch-friendly controls */
+    .glass-range {
+        height: 6px;
+    }
+
+    .glass-range::-webkit-slider-thumb {
+        width: 22px;
+        height: 22px;
+    }
+
+    .glass-btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+
+    /* Watermark smaller on mobile */
+    .watermark {
+        font-size: 0.55rem;
+        letter-spacing: 0.15em;
+        bottom: 10px;
+        right: 12px;
     }
 }

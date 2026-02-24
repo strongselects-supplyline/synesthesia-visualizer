@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Synesthesia Visualizer // Cloud State</title>
+    <meta name="description"
+        content="Real-time synesthetic music visualizer by Cloud State. Experience music as color, light, and motion.">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,7 +31,7 @@
     <!-- Hidden audio element for catalog playback -->
     <audio id="catalogAudioPlayer" crossorigin="anonymous"></audio>
 
-    <!-- Subtle hint that fades away -->
+    <!-- Subtle hint that fades away — hidden in embed mode -->
     <div id="panelHint" class="panel-hint">
         <span class="hint-key">TAB</span> controls
     </div>
@@ -124,6 +126,39 @@
     <script type="module" src="visualizer.js"></script>
 
     <script>
+        // ─── URL PARAM HANDLING ───────────────────────────────────────────
+        (function applyUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+
+            // ?embed=true — clean embed for Wix / superfan / iframe
+            if (params.get('embed') === 'true') {
+                document.body.classList.add('embed-mode');
+            }
+
+            // ?autoplay=true — auto-switch to Catalog mode and start first track
+            if (params.get('autoplay') === 'true') {
+                window.addEventListener('DOMContentLoaded', () => {
+                    const catalogBtn = document.getElementById('modeCatalogBtn');
+                    if (catalogBtn) setTimeout(() => catalogBtn.click(), 500);
+                });
+            }
+
+            // ?track=id — open to a specific catalog track
+            const trackId = params.get('track');
+            if (trackId) {
+                window.addEventListener('DOMContentLoaded', () => {
+                    const sel = document.getElementById('trackSelector');
+                    if (sel) {
+                        setTimeout(() => {
+                            const opt = Array.from(sel.options).find(o => o.value === trackId);
+                            if (opt) { sel.value = trackId; sel.dispatchEvent(new Event('change')); }
+                        }, 800);
+                    }
+                });
+            }
+        })();
+
+        // ─── BEAT UI ─────────────────────────────────────────────────────
         (function updateBeatUI() {
             const dot = document.getElementById('beatDot');
             const bpmEl = document.getElementById('bpmDisplay');
