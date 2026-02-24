@@ -91,8 +91,9 @@ let keyVotes = {};           // { 'A Major': 142, 'F# Minor': 89, ... }
 let totalKeyVotes = 0;
 let lockedKey = '';          // once locked, this IS the song's key
 let keyIsLocked = false;
-const LOCK_THRESHOLD = 0.55;     // lock in when a key has 55% of all votes
-const OVERTURN_THRESHOLD = 0.70; // once locked, need 70% to change (true modulation)
+const LOCK_THRESHOLD = 0.50;     // lock in when a key has 50% of all votes
+const OVERTURN_THRESHOLD = 0.55; // once locked, need 55% from a different key to change
+const VOTE_DECAY = 0.997;        // votes decay each frame so system stays responsive
 
 // Krumhansl-Schmuckler key profiles
 const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
@@ -175,6 +176,25 @@ function teardownSource() {
     }
 
     window.audioData.isActive = false;
+
+    // Reset key detection for the new track
+    resetKeyDetection();
+}
+
+function resetKeyDetection() {
+    chromaVector = new Float32Array(12);
+    keyStableFrames = 0;
+    lastDetectedKey = '';
+    keyVotes = {};
+    totalKeyVotes = 0;
+    lockedKey = '';
+    keyIsLocked = false;
+    keyDebugTimer = 0;
+    window.audioData.detectedKey = '';
+    window.audioData.detectedHex = '';
+    window.audioData.keyConfidence = 0;
+    const keyEl = document.getElementById('detectedKeyDisplay');
+    if (keyEl) keyEl.textContent = 'Listening...';
 }
 
 function ensureContext() {
@@ -503,15 +523,20 @@ function updateKeyDetection() {
     const relatedKey = RELATIVE_MINOR_MAP[bestKey] || '';
 
     // Cast vote (confidence-weighted)
-    const voteWeight = confidence * confidence; // squared: high confidence counts way more
+    const voteWeight = confidence * confidence;
     if (!keyVotes[voteKey]) keyVotes[voteKey] = 0;
     keyVotes[voteKey] += voteWeight;
-    // Related key gets a smaller vote too
     if (relatedKey) {
         if (!keyVotes[relatedKey]) keyVotes[relatedKey] = 0;
         keyVotes[relatedKey] += voteWeight * 0.5;
     }
     totalKeyVotes += voteWeight;
+
+    // Apply vote decay — old votes gradually fade, keeping system responsive
+    for (const key of Object.keys(keyVotes)) {
+        keyVotes[key] *= VOTE_DECAY;
+    }
+    totalKeyVotes *= VOTE_DECAY;
 
     // Find the leading key by total votes
     let leadingKey = '';
@@ -714,18 +739,7 @@ document.getElementById('modeLiveBtn').addEventListener('click', () => {
         catalogAudioEl.currentTime = 0;
     }
     // Reset key detection state so we start fresh
-    chromaVector = new Float32Array(12);
-    keyStableFrames = 0;
-    lastDetectedKey = '';
-    keyVotes = {};
-    totalKeyVotes = 0;
-    lockedKey = '';
-    keyIsLocked = false;
-    window.audioData.detectedKey = '';
-    window.audioData.detectedHex = '';
-    window.audioData.keyConfidence = 0;
-    const keyEl = document.getElementById('detectedKeyDisplay');
-    if (keyEl) keyEl.textContent = 'Listening...';
+    resetKeyDetection();
 
     if (radioMic.checked && !window.audioData.isActive) {
         connectMic();
