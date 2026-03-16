@@ -1,23 +1,45 @@
+// ============================================================
+// Synesthesia Visualizer — ALL LOVE Catalog
+// past.El — Key → Hex Synesthesia System
+// Updated: March 16, 2026
+// ============================================================
+
 // Key → Hex lookup — Ethan Payton's Personal Synesthesia System
 const synMap = {
-    'C Major': '#00A3A3', 'A Minor': '#00A3A3', // Teal
-    'G Major': '#FFFFF0', 'E Minor': '#FFFFF0', // Cream
-    'D Major': '#E2D077', 'B Minor': '#E2D077', // Muted Yellow
-    'A Major': '#C4651D', 'F# Minor': '#C4651D', // Fox Brown
-    'E Major': '#DA70D6', 'C# Minor': '#DA70D6', // Pink-Purple
-    'B Major': '#B0E0E6', 'G# Minor': '#B0E0E6', // Baby Blue / Powder
-    'Gb Major': '#FFFAFA', 'Eb Minor': '#FFFAFA', // Snow White
-    'Db Major': '#DAA520', 'Bb Minor': '#DAA520', // Goldenrod
-    'Ab Major': '#884513', 'F Minor': '#884513', // Brown
-    'Eb Major': '#4B0082', 'C Minor': '#4B0082', // Dark Purple
-    'Bb Major': '#A52A2A', 'G Minor': '#A52A2A', // Maroon
-    'F Major': '#DC143C', 'D Minor': '#DC143C', // Red
+    'C Major': '#00A3A3', 'A Minor': '#00A3A3',
+    'G Major': '#FFFFF0', 'E Minor': '#FFFFF0',
+    'D Major': '#E2D077', 'B Minor': '#E2D077',
+    'A Major': '#C4651D', 'F# Minor': '#C4651D',
+    'E Major': '#DA70D6', 'C# Minor': '#DA70D6',
+    'B Major': '#B0E0E6', 'G# Minor': '#B0E0E6',
+    'Gb Major': '#FFFAFA', 'Eb Minor': '#FFFAFA',
+    'Db Major': '#DAA520', 'Bb Minor': '#DAA520',
+    'Ab Major': '#884513', 'F Minor': '#884513',
+    'Eb Major': '#4B0082', 'C Minor': '#4B0082',
+    'Bb Major': '#A52A2A', 'G Minor': '#A52A2A',
+    'F Major': '#DC143C', 'D Minor': '#DC143C',
+    'A# Minor': '#DAA520', // alias for Bb Minor
 };
 
-// Window-expose for module access
+// ============================================================
+// ALL LOVE — 11 Tracks (April 10, 2026)
+// NOTE: Tracks with key "TBD" will render as black (#000000)
+// until Ethan updates BPM/key/mood data from the studio.
+// ============================================================
+
 window.allLoveCatalog = [
     {
         trackNumber: 1,
+        id: 'i-like-girls',
+        title: "I Like Girls",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/i-like-girls.mp3'
+    },
+    {
+        trackNumber: 2,
         id: 'see-me',
         title: "SEE ME",
         bpm: 120,
@@ -27,17 +49,57 @@ window.allLoveCatalog = [
         audioUrl: 'audio/see-me.mp3'
     },
     {
-        trackNumber: 2,
-        id: 'esl',
-        title: "ESL",
+        trackNumber: 3,
+        id: 'east-side-love',
+        title: "East Side Love",
         bpm: 105,
         key: "C# Minor",
         status: "single",
         moods: { sexy: 87, chill: 63, happy: 38, sad: 10 },
-        audioUrl: 'audio/esl.mp3'
+        audioUrl: 'audio/east-side-love.mp3'
     },
     {
-        trackNumber: 3,
+        trackNumber: 4,
+        id: 'want-u-bad',
+        title: "Want U Bad",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/want-u-bad.mp3'
+    },
+    {
+        trackNumber: 5,
+        id: 'green-light-patient',
+        title: "Green Light Patient",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/green-light-patient.mp3'
+    },
+    {
+        trackNumber: 6,
+        id: 'luxury',
+        title: "Luxury",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/luxury.mp3'
+    },
+    {
+        trackNumber: 7,
+        id: 'worth-it',
+        title: "Worth It",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
+        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        audioUrl: 'audio/worth-it.mp3'
+    },
+    {
+        trackNumber: 8,
         id: 'sweet-frustration',
         title: "Sweet Frustration",
         bpm: 124,
@@ -47,85 +109,35 @@ window.allLoveCatalog = [
         audioUrl: 'audio/sweet-frustration.mp3'
     },
     {
-        trackNumber: 4,
-        id: 'hollywood-fever',
-        title: 'Hollywood Fever',
-        key: 'F Major',
-        bpm: 122,
-        status: 'released',
-        moods: { sexy: 76, chill: 58, happy: 71, sad: 4 },
-        audioUrl: 'audio/hollywood-fever.mp3'
-    },
-    {
-        trackNumber: 5,
-        id: 'roll-with-it',
-        title: 'Roll With It',
-        key: 'Ab Major',
-        bpm: 105,
-        status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/roll-with-it.mp3'
-    },
-    {
-        trackNumber: 6,
-        id: 'on-the-move',
-        title: 'On The Move',
-        key: 'A Major',
-        bpm: 115,
-        status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/on-the-move.mp3'
-    },
-    {
-        trackNumber: 7,
-        id: 'advance',
-        title: 'Advance',
-        key: 'Bb Major',
-        bpm: 118,
-        status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/advance.mp3'
-    },
-    {
-        trackNumber: 8,
-        id: 'supposed-to-know',
-        title: 'Supposed To Know',
-        key: 'A Major',
-        bpm: 105,
-        status: 'released',
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/supposed-to-know.mp3'
-    },
-    {
         trackNumber: 9,
-        id: 'dance-with-him',
-        title: 'Dance With Him',
-        key: 'E Major',
-        bpm: 208,
-        status: 'released',
+        id: 'like-i-did',
+        title: "Like I Did",
+        bpm: 0,
+        key: "TBD",
+        status: "single",
         moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/dance-with-him.mp3'
+        audioUrl: 'audio/like-i-did.mp3'
     },
     {
         trackNumber: 10,
-        id: 'ride-with-me',
-        title: 'Ride With Me',
-        key: 'Eb Major',
-        bpm: 107,
-        status: 'released',
+        id: 'just-say-so',
+        title: "Just Say So",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
         moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/ride-with-me.mp3'
+        audioUrl: 'audio/just-say-so.mp3'
     },
     {
         trackNumber: 11,
-        id: 'origami',
-        title: 'Origami',
-        key: 'C Major',
-        bpm: 120,
-        status: 'released',
+        id: 'reconnect',
+        title: "Reconnect",
+        bpm: 0,
+        key: "TBD",
+        status: "album",
         moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
-        audioUrl: 'audio/origami.mp3'
-    }
+        audioUrl: 'audio/reconnect.mp3'
+    },
 ];
 
 // Compute derived fields

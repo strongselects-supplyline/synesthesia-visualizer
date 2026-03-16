@@ -65,8 +65,14 @@ const washUniforms = {
     uEvoMids: { value: 0.0 },
     uEvoHighs: { value: 0.0 },
     uSongPhase: { value: 0.0 },  // 0 calm, 1 peak
-    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+    uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+    uPortalProgress: { value: 0.0 }  // 0 = normal, 1 = fully consumed by portal
 };
+
+// Expose for event.js access
+window.washUniforms = washUniforms;
+window.targetColor = targetColor;
+window.portalProgress = 0;
 
 const washMaterial = new THREE.ShaderMaterial({
     uniforms: washUniforms,
@@ -90,6 +96,7 @@ const washMaterial = new THREE.ShaderMaterial({
         uniform float uEvoMids;
         uniform float uEvoHighs;
         uniform float uSongPhase;
+        uniform float uPortalProgress;
         varying vec2 vUv;
 
         void main() {
@@ -157,6 +164,40 @@ const washMaterial = new THREE.ShaderMaterial({
             float vignetteRadius = 1.3 - uSongPhase * 0.2;
             float vignette = 1.0 - pow(length(vUv - 0.5) * vignetteRadius, 2.5);
             col *= max(vignette, 0.15);
+
+            // === PORTAL VORTEX ===
+            if (uPortalProgress > 0.01) {
+                float p = uPortalProgress;
+
+                // Spiral distortion
+                vec2 toCenter = vUv - vec2(0.5);
+                float dist = length(toCenter);
+                float angle = atan(toCenter.y, toCenter.x);
+
+                // Rotation increases toward center and with progress
+                float spiralStrength = p * 8.0 * (1.0 - dist);
+                angle += spiralStrength;
+
+                // Ring of light at the portal edge
+                float ringRadius = 0.3 * (1.0 - p * 0.8);
+                float ring = smoothstep(ringRadius - 0.05, ringRadius, dist)
+                           * smoothstep(ringRadius + 0.12, ringRadius + 0.02, dist);
+                ring *= p;
+
+                // Event horizon — black center that grows
+                float horizonRadius = p * 0.35;
+                float horizon = 1.0 - smoothstep(horizonRadius - 0.05, horizonRadius, dist);
+
+                // Apply
+                col = mix(col, col * 0.3, p * 0.5);
+                col += uColor * ring * 3.0;
+                col += vec3(1.0, 0.98, 0.94) * ring * p * 2.0;
+                col *= 1.0 - horizon;
+
+                // Final flash at p > 0.9
+                float finalFlash = smoothstep(0.85, 1.0, p);
+                col = mix(col, vec3(1.0), finalFlash);
+            }
 
             gl_FragColor = vec4(col, 1.0);
         }
@@ -559,6 +600,16 @@ function setTrack(index) {
 }
 window.setTrack = setTrack;
 
+// Set track by ID (used by Event Mode)
+function setTrackById(id) {
+    const catalog = window.allLoveCatalog || [];
+    const index = catalog.findIndex(t => t.id === id);
+    if (index >= 0) {
+        setTrack(index);
+    }
+}
+window.setTrackById = setTrackById;
+
 function populateCatalog() {
     const sel = document.getElementById('trackSelector');
     if (!sel || typeof window.allLoveCatalog === 'undefined') return;
@@ -648,6 +699,41 @@ function animate() {
     washUniforms.uEvoMids.value = evoMids;
     washUniforms.uEvoHighs.value = evoHighs;
     washUniforms.uSongPhase.value = songPhase;
+    washUniforms.uPortalProgress.value = window.portalProgress || 0;
+
+    // --- Portal particle spiral ---
+    const portalP = window.portalProgress || 0;
+    if (portalP > 0.01) {
+        const bassPositions = bassGeo.attributes.position.array;
+        const midPositions = midGeo.attributes.position.array;
+        const highPositions = highGeo.attributes.position.array;
+
+        const spiralParticles = (positions, count) => {
+            for (let i = 0; i < count; i++) {
+                const ix = i * 3, iy = i * 3 + 1;
+                const dx = positions[ix], dy = positions[iy];
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx);
+                // Pull toward center + rotate
+                const pull = 1.0 - portalP * 0.03;
+                const spin = portalP * 0.08;
+                const newAngle = angle + spin;
+                positions[ix] = Math.cos(newAngle) * dist * pull;
+                positions[iy] = Math.sin(newAngle) * dist * pull;
+            }
+        };
+
+        spiralParticles(bassPositions, BASS_COUNT);
+        spiralParticles(midPositions, MID_COUNT);
+        spiralParticles(highPositions, HIGH_COUNT);
+
+        bassGeo.attributes.position.needsUpdate = true;
+        midGeo.attributes.position.needsUpdate = true;
+        highGeo.attributes.position.needsUpdate = true;
+
+        // Crank bloom during portal
+        bloomPass.strength = Math.min(0.5 + portalP * 2.5, 3.0);
+    }
 
     // --- Bass zone ---
     updateBassParticles();
@@ -773,10 +859,40 @@ function setupPanel() {
         window.currentMode = 'live';
         liveBtn.classList.add('active');
         if (catBtn) catBtn.classList.remove('active');
+        if (eventBtn) eventBtn.classList.remove('active');
         if (liveControls) liveControls.classList.remove('hidden');
         if (catControls) catControls.classList.add('hidden');
         if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
+        // Deactivate event mode if active
+        if (window.eventMode) window.eventMode.deactivate();
     });
+
+    // Event Mode button
+    const eventBtn = document.getElementById('modeEventBtn');
+    if (eventBtn) eventBtn.addEventListener('click', () => {
+        currentMode = 'event';
+        window.currentMode = 'event';
+        eventBtn.classList.add('active');
+        if (catBtn) catBtn.classList.remove('active');
+        if (liveBtn) liveBtn.classList.remove('active');
+        if (catControls) catControls.classList.add('hidden');
+        if (liveControls) liveControls.classList.add('hidden');
+        if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
+        // Activate event mode
+        if (window.eventMode) {
+            window.eventMode.init();
+            window.eventMode.activate();
+        }
+    });
+
+    // Also update catalog button to deactivate event mode
+    if (catBtn) {
+        const origCatClick = catBtn.onclick;
+        catBtn.addEventListener('click', () => {
+            if (eventBtn) eventBtn.classList.remove('active');
+            if (window.eventMode) window.eventMode.deactivate();
+        });
+    }
 }
 
 // ============================================================
@@ -799,3 +915,8 @@ window.addEventListener('resize', () => {
 populateCatalog();
 setupPanel();
 animate();
+
+// Init Event Mode (waits for activate() call)
+if (window.eventMode) {
+    window.eventMode.init();
+}

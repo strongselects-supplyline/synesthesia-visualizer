@@ -612,4 +612,179 @@ body.embed-mode #controlPanel {
         bottom: 10px;
         right: 12px;
     }
+
+    .event-album-title {
+        font-size: clamp(2rem, 6vw, 4rem) !important;
+    }
+    .event-track-title {
+        font-size: clamp(1.4rem, 4vw, 2.2rem) !important;
+    }
+    .event-start-btn {
+        padding: 0.8em 2em !important;
+        font-size: 0.8rem !important;
+    }
+}
+
+/* ============================================================
+   EVENT MODE STYLES
+   ============================================================ */
+
+.event-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.event-overlay.active {
+    pointer-events: auto;
+}
+.event-overlay.hidden {
+    display: none;
+}
+
+.event-title-card {
+    text-align: center;
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+}
+
+.event-album-title {
+    font-size: 4rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-bottom: 0.3em;
+    opacity: 0;
+    transition: opacity 1.5s ease;
+}
+
+.event-artist {
+    font-size: 1.2rem;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 1.5s ease 0.3s;
+    margin-bottom: 3em;
+}
+
+.event-track-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3em;
+}
+
+.event-track-number {
+    font-family: 'Outfit', sans-serif;
+    font-size: 1rem;
+    font-weight: 300;
+    opacity: 0;
+    letter-spacing: 0.2em;
+    color: rgba(255,255,255,0.4);
+    transition: opacity 0.8s ease;
+}
+
+.event-track-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    color: #fff;
+}
+
+.event-start-btn {
+    margin-top: 3em;
+    padding: 1em 3em;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.4s ease;
+    opacity: 0;
+    transition: opacity 1.5s ease 0.6s, background 0.3s ease, border-color 0.3s ease;
+}
+.event-start-btn:hover {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.35);
+}
+
+/* Event End Overlay */
+.event-end-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 200;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 2s ease;
+    pointer-events: none;
+}
+.event-end-overlay.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.event-end-overlay.hidden {
+    display: none;
+}
+.event-end-text {
+    color: #fff;
+    font-family: 'Outfit', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 300;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 3s ease 2s;
+}
+.event-end-overlay.visible .event-end-text {
+    opacity: 0.7;
+}
+
+/* Event Progress Bar */
+.event-progress-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    z-index: 150;
+    background: rgba(255,255,255,0.06);
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    pointer-events: none;
+}
+.event-progress-bar.visible {
+    opacity: 1;
+}
+.event-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: rgba(255,255,255,0.3);
+    transition: width 0.3s linear;
+}
+.event-progress-time {
+    position: absolute;
+    right: 12px;
+    bottom: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 300;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 0.05em;
 }

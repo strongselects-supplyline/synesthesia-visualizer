@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Synesthesia Visualizer // Cloud State</title>
+    <title>Synesthesia Visualizer // past.El</title>
     <meta name="description"
-        content="Real-time synesthetic music visualizer by Cloud State. Experience music as color, light, and motion.">
+        content="Real-time synesthetic music visualizer by past.El. Experience music as color, light, and motion.">
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -43,13 +43,14 @@
         <div class="panel-inner">
             <div class="panel-header">
                 <h2 class="panel-title">Synesthesia <span class="accent">Visualizer</span></h2>
-                <p class="panel-sub">Cloud State</p>
+                <p class="panel-sub">past.El</p>
             </div>
 
             <!-- Mode Toggles -->
             <div class="mode-toggles">
                 <button id="modeCatalogBtn" class="glass-btn active">Catalog</button>
                 <button id="modeLiveBtn" class="glass-btn">Live Audio</button>
+                <button id="modeEventBtn" class="glass-btn">Event</button>
             </div>
 
             <!-- Catalog Controls -->
@@ -115,14 +116,39 @@
         </div>
     </div>
 
+    <!-- Event Mode Overlay -->
+    <div id="eventOverlay" class="event-overlay hidden">
+        <div class="event-title-card">
+            <div class="event-album-title">ALL LOVE</div>
+            <div class="event-artist">past.El</div>
+            <div class="event-track-info">
+                <span class="event-track-number"></span>
+                <span class="event-track-title"></span>
+            </div>
+            <button id="eventStartBtn" class="event-start-btn">Begin Experience</button>
+        </div>
+    </div>
+
+    <!-- Event End Overlay -->
+    <div id="eventEndOverlay" class="event-end-overlay hidden">
+        <div class="event-end-text">the love continues...</div>
+    </div>
+
+    <!-- Event Progress Bar -->
+    <div id="eventProgressBar" class="event-progress-bar">
+        <div id="eventProgressFill" class="event-progress-fill"></div>
+        <span id="eventProgressTime" class="event-progress-time"></span>
+    </div>
+
     <!-- Watermark (visible in immersive mode) -->
     <div class="watermark">
-        <span>Cloud State</span>
+        <span>past.El</span>
     </div>
 
     <script src="catalog.js"></script>
     <script src="audio.js"></script>
     <script src="midi.js"></script>
+    <script src="event.js"></script>
     <script type="module" src="visualizer.js"></script>
 
     <script>
@@ -140,6 +166,14 @@
                 window.addEventListener('DOMContentLoaded', () => {
                     const catalogBtn = document.getElementById('modeCatalogBtn');
                     if (catalogBtn) setTimeout(() => catalogBtn.click(), 500);
+                });
+            }
+
+            // ?mode=event — launch directly into Event Mode
+            if (params.get('mode') === 'event') {
+                window.addEventListener('DOMContentLoaded', () => {
+                    const eventBtn = document.getElementById('modeEventBtn');
+                    if (eventBtn) setTimeout(() => eventBtn.click(), 500);
                 });
             }
 
