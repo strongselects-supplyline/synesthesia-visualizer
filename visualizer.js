@@ -1,12 +1,55 @@
 // ============================================================
-// Synesthesia Visualizer — WebGL Engine v3.0 "Front of House"
-// Spatial Frequency Mapping + Immersive Default + Zone Textures
+// Synesthesia Visualizer — WebGL Engine v3.1 "Front of House"
+// Spatial Frequency Mapping + Post-FX + Per-Track Identity
+// v2 phases: P1 identity, P3 post-fx, P5 perf tiers, P6 interaction
 // ============================================================
 
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ============================================================
+// PERF TIER — detect hardware capability
+// ============================================================
+function detectPerfTier() {
+    const urlTier = new URLSearchParams(location.search).get('perf');
+    if (urlTier && ['low', 'mid', 'high'].includes(urlTier)) return urlTier;
+    const cores = navigator.hardwareConcurrency || 4;
+    const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+    const mem = navigator.deviceMemory || 4;
+    if (mobile && (cores <= 4 || mem <= 2)) return 'low';
+    if (mobile) return 'mid';
+    if (cores <= 4) return 'mid';
+    return 'high';
+}
+const PERF_TIER = detectPerfTier();
+window.PERF_TIER = PERF_TIER;
+
+// Per-tier particle counts
+const BASS_COUNT_MAP  = { low: 60,  mid: 90,  high: 120 };
+const MID_COUNT_MAP   = { low: 120, mid: 180, high: 250 };
+const HIGH_COUNT_MAP  = { low: 200, mid: 350, high: 500 };
+const PIXEL_RATIO_MAP = { low: 1.5, mid: 1.75, high: 2.0 };
+const FX_ENABLED      = { low: false, mid: true, high: true };
+const ABERR_ENABLED   = { low: false, mid: false, high: true };
+
+// Derived particle counts — used at module init time
+const BASS_COUNT = BASS_COUNT_MAP[PERF_TIER];
+const MID_COUNT  = MID_COUNT_MAP[PERF_TIER];
+const HIGH_COUNT = HIGH_COUNT_MAP[PERF_TIER];
+
+// Stats overlay (?stats=true)
+if (new URLSearchParams(location.search).get('stats') === 'true') {
+    import('https://unpkg.com/stats.js@0.17.0/build/stats.min.js').then(() => {
+        const stats = new Stats();
+        stats.dom.style.cssText = 'position:fixed;top:0;right:0;z-index:9999;opacity:0.7';
+        document.body.appendChild(stats.dom);
+        window._stats = stats;
+    }).catch(() => {});
+}
 
 // --- State ---
 let currentColor = new THREE.Color('#2d3142');
@@ -17,6 +60,39 @@ let currentMode = 'catalog';
 window.currentMode = currentMode;
 window.intensity = intensity;
 window.forgeStage = forgeStage;
+
+// --- Active identity (set by applyTrackIdentity) ---
+let activeIdentity = null;
+function getIdentity() {
+    return activeIdentity || (window.IDENTITY_DEFAULT || {});
+}
+
+// --- Cursor state (Phase 6 parallax) ---
+let cursorX = 0, cursorY = 0;
+document.addEventListener('mousemove', (e) => {
+    cursorX = (e.clientX / window.innerWidth  - 0.5) * 2;  // -1 to 1
+    cursorY = (e.clientY / window.innerHeight - 0.5) * 2;  // -1 to 1
+});
+document.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 0) {
+        cursorX = (e.touches[0].clientX / window.innerWidth  - 0.5) * 2;
+        cursorY = (e.touches[0].clientY / window.innerHeight - 0.5) * 2;
+    }
+}, { passive: true });
+
+// --- Mode crossfade state ---
+let transitionProgress = 0;
+let transitionActive = false;
+let transitionStart = 0;
+const TRANSITION_DURATION = 600; // ms
+
+// --- Gyroscope (mobile only) ---
+if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', (e) => {
+        if (e.gamma !== null) cursorX = Math.max(-1, Math.min(1, e.gamma / 45));
+        if (e.beta  !== null) cursorY = Math.max(-1, Math.min(1, (e.beta - 45) / 45));
+    }, { passive: true });
+}
 
 // --- Three.js Core ---
 const scene = new THREE.Scene();
@@ -29,7 +105,7 @@ const renderer = new THREE.WebGLRenderer({
     powerPreference: 'high-performance'
 });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_MAP[PERF_TIER]));
 renderer.setClearColor(0x030810, 1);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
@@ -47,6 +123,67 @@ const bloomPass = new UnrealBloomPass(
     0.5, 0.3, 0.6
 );
 composer.addPass(bloomPass);
+
+// --- Chromatic Aberration (ShaderPass) ---
+const AberrationShader = {
+    uniforms: {
+        tDiffuse:    { value: null },
+        uStrength:   { value: 0.0015 },
+        uResolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uStrength;
+        varying vec2 vUv;
+        void main() {
+            vec2 offset = (vUv - 0.5) * uStrength * 15.0;
+            float r = texture2D(tDiffuse, vUv + offset).r;
+            float g = texture2D(tDiffuse, vUv).g;
+            float b = texture2D(tDiffuse, vUv - offset).b;
+            float a = texture2D(tDiffuse, vUv).a;
+            gl_FragColor = vec4(r, g, b, a);
+        }
+    `
+};
+const aberrationPass = new ShaderPass(AberrationShader);
+if (ABERR_ENABLED[PERF_TIER]) composer.addPass(aberrationPass);
+
+// --- Film Grain (ShaderPass) ---
+const GrainShader = {
+    uniforms: {
+        tDiffuse:   { value: null },
+        uTime:      { value: 0.0 },
+        uIntensity: { value: 0.06 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        uniform float uIntensity;
+        varying vec2 vUv;
+        float rand(vec2 co) {
+            return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453 + uTime);
+        }
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            float grain = (rand(vUv) - 0.5) * uIntensity;
+            gl_FragColor = vec4(color.rgb + grain, color.a);
+        }
+    `
+};
+const grainPass = new ShaderPass(GrainShader);
+if (FX_ENABLED[PERF_TIER]) composer.addPass(grainPass);
+
+// --- Output pass (color space / tone mapping) ---
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
 
 // ============================================================
 // BACKGROUND WASH — Zonal (bass warmth bottom, cool shimmer top)
@@ -216,7 +353,7 @@ scene.add(washMesh);
 // Large orbs that pulse and expand on kicks, anchored low/center
 // ============================================================
 
-const BASS_COUNT = 120;
+// BASS_COUNT / MID_COUNT / HIGH_COUNT from perf-tier map (declared above)
 const bassGeo = new THREE.BufferGeometry();
 const bassPos = new Float32Array(BASS_COUNT * 3);
 const bassSizes = new Float32Array(BASS_COUNT);
@@ -317,7 +454,7 @@ scene.add(bassPoints);
 // Medium orbs, wider spread, driven by mids + vocals
 // ============================================================
 
-const MID_COUNT = 250;
+// MID_COUNT from perf-tier map
 const midGeo = new THREE.BufferGeometry();
 const midPos = new Float32Array(MID_COUNT * 3);
 const midSizes = new Float32Array(MID_COUNT);
@@ -408,7 +545,7 @@ scene.add(midPoints);
 // Tiny, sharp, shimmering — hi-hats, air, brightness
 // ============================================================
 
-const HIGH_COUNT = 500;
+// HIGH_COUNT from perf-tier map
 const highGeo = new THREE.BufferGeometry();
 const highPos = new Float32Array(HIGH_COUNT * 3);
 const highSizes = new Float32Array(HIGH_COUNT);
@@ -509,7 +646,7 @@ scene.add(highPoints);
 
 function updateBassParticles() {
     const p = bassGeo.attributes.position.array;
-    const audio = window.audioData;
+    const audio = window.audioData || {};
     const chaos = 1.0 + (1.0 - forgeStage) * 2.0;
     const evoBass = audio.evolutionBass || 0;
 
@@ -544,7 +681,7 @@ function updateBassParticles() {
 
 function updateMidParticles() {
     const p = midGeo.attributes.position.array;
-    const audio = window.audioData;
+    const audio = window.audioData || {};
     const chaos = 1.0 + (1.0 - forgeStage) * 3.0;
     const evoMids = audio.evolutionMids || 0;
 
@@ -581,6 +718,37 @@ function updateMidParticles() {
 // CATALOG
 // ============================================================
 
+// ============================================================
+// APPLY TRACK IDENTITY — Phase 1
+// ============================================================
+function applyTrackIdentity(track) {
+    if (!track || !window.getTrackIdentity) return;
+    const id = window.getTrackIdentity(track.id);
+    activeIdentity = id;
+
+    // Camera — baseZ in track-identity uses spec units (default 6).
+    // Particle world coords are scaled for camera z≈50; apply scale factor.
+    if (id.camera) {
+        camera.position.z = (id.camera.baseZ || 6) * (50 / 6);
+    }
+
+    // Shader multipliers
+    if (id.shader) {
+        // bloomBoost applied relative to base strength in animate()
+        if (typeof aberrationPass !== 'undefined' && ABERR_ENABLED[PERF_TIER]) {
+            aberrationPass.uniforms.uStrength.value = id.shader.aberrationBase || 0.0015;
+        }
+        if (typeof grainPass !== 'undefined' && FX_ENABLED[PERF_TIER]) {
+            grainPass.uniforms.uIntensity.value = id.shader.grainBase || 0.06;
+        }
+    }
+}
+
+function triggerModeTransition() {
+    transitionActive = true;
+    transitionStart = performance.now();
+}
+
 function setTrack(index) {
     const track = window.allLoveCatalog[index];
     if (!track) return;
@@ -593,6 +761,9 @@ function setTrack(index) {
     const hex = document.getElementById('hexDisplay');
     if (hex) hex.textContent = track.synHex || '#2d3142';
     document.documentElement.style.setProperty('--accent-color', track.synHex || '#47e6a6');
+
+    // Apply per-track visual identity
+    applyTrackIdentity(track);
 
     if (track.audioUrl && typeof window.playCatalogTrack === 'function') {
         window.playCatalogTrack(track.audioUrl);
@@ -681,10 +852,46 @@ function animate() {
     beatFlashDecay *= 0.72;
     beatPunchDecay *= 0.78;
 
+    // --- Grain time update ---
+    if (FX_ENABLED[PERF_TIER]) {
+        grainPass.uniforms.uTime.value = elapsed * 0.1;
+        // Grain breathes with song phase
+        const baseGrain = getIdentity().shader ? (getIdentity().shader.grainBase || 0.06) : 0.06;
+        grainPass.uniforms.uIntensity.value = baseGrain + 0.04 * (audio.songPhase || 0);
+    }
+
+    // --- Chromatic aberration: pulse with bass ---
+    if (ABERR_ENABLED[PERF_TIER]) {
+        const baseAberr = getIdentity().shader ? (getIdentity().shader.aberrationBase || 0.0015) : 0.0015;
+        aberrationPass.uniforms.uStrength.value = baseAberr + 0.003 * (bass || 0);
+    }
+
+    // --- Mode crossfade envelope ---
+    if (transitionActive) {
+        const tElapsed = performance.now() - transitionStart;
+        transitionProgress = Math.min(tElapsed / TRANSITION_DURATION, 1);
+        const wave = Math.sin(transitionProgress * Math.PI); // 0→1→0
+        bloomPass.strength = (audio.isActive
+            ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage, 1.8)
+            : (0.25 + intensity * 0.2) * forgeStage) * (1 + wave * 1.4);
+        if (transitionProgress >= 1) transitionActive = false;
+    }
+
+    // --- Cursor parallax on camera ---
+    const camParallaxStrength = 1.5;
+    camera.position.x += (cursorX * camParallaxStrength - camera.position.x) * 0.06;
+    camera.position.y += (-cursorY * camParallaxStrength - camera.position.y) * 0.06;
+
     // --- Bloom: beat-driven but capped, slightly louder at higher song phase ---
-    bloomPass.strength = audio.isActive
-        ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage, 1.8)
-        : (0.25 + intensity * 0.2) * forgeStage;
+    const bloomBoostMult = getIdentity().shader ? (getIdentity().shader.bloomBoost || 1.0) : 1.0;
+    if (!transitionActive) {
+        bloomPass.strength = audio.isActive
+            ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage * bloomBoostMult, 1.8)
+            : (0.25 + intensity * 0.2) * forgeStage * bloomBoostMult;
+    }
+
+    // Stats update
+    if (window._stats) window._stats.update();
 
     // --- Wash (with evolution uniforms) ---
     washUniforms.uTime.value = elapsed;
@@ -846,15 +1053,19 @@ function setupPanel() {
     });
 
     if (catBtn) catBtn.addEventListener('click', () => {
+        triggerModeTransition();
         currentMode = 'catalog';
         window.currentMode = 'catalog';
         catBtn.classList.add('active');
         if (liveBtn) liveBtn.classList.remove('active');
         if (catControls) catControls.classList.remove('hidden');
         if (liveControls) liveControls.classList.add('hidden');
+        if (eventBtn) eventBtn.classList.remove('active');
+        if (window.eventMode) window.eventMode.deactivate();
     });
 
     if (liveBtn) liveBtn.addEventListener('click', () => {
+        triggerModeTransition();
         currentMode = 'live';
         window.currentMode = 'live';
         liveBtn.classList.add('active');
@@ -863,13 +1074,13 @@ function setupPanel() {
         if (liveControls) liveControls.classList.remove('hidden');
         if (catControls) catControls.classList.add('hidden');
         if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
-        // Deactivate event mode if active
         if (window.eventMode) window.eventMode.deactivate();
     });
 
     // Event Mode button
     const eventBtn = document.getElementById('modeEventBtn');
     if (eventBtn) eventBtn.addEventListener('click', () => {
+        triggerModeTransition();
         currentMode = 'event';
         window.currentMode = 'event';
         eventBtn.classList.add('active');
@@ -878,21 +1089,11 @@ function setupPanel() {
         if (catControls) catControls.classList.add('hidden');
         if (liveControls) liveControls.classList.add('hidden');
         if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
-        // Activate event mode
         if (window.eventMode) {
             window.eventMode.init();
             window.eventMode.activate();
         }
     });
-
-    // Also update catalog button to deactivate event mode
-    if (catBtn) {
-        const origCatClick = catBtn.onclick;
-        catBtn.addEventListener('click', () => {
-            if (eventBtn) eventBtn.classList.remove('active');
-            if (window.eventMode) window.eventMode.deactivate();
-        });
-    }
 }
 
 // ============================================================
