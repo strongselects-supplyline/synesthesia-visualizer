@@ -1,7 +1,7 @@
 // ============================================================
 // Synesthesia Visualizer — Event Mode Controller
 // "The Portal" — Cinematic Album Listening Experience
-// past.El — ALL LOVE (April 10, 2026)
+// past.El — ALL LOVE (April 24, 2026)
 // ============================================================
 
 class EventMode {
@@ -12,6 +12,7 @@ class EventMode {
         this.audioEl = null;
         this.isActive = false;
         this.animFrameId = null;
+        this._initialized = false;  // guard: prevent duplicate listener registration on repeated init() calls
 
         // DOM refs (set in init)
         this.overlay = null;
@@ -34,7 +35,7 @@ class EventMode {
         this._parseParams();
     }
 
-    // ─── URL PARAMS ──────────────────────────────────────────
+    // --- URL PARAMS ---
     _parseParams() {
         const params = new URLSearchParams(window.location.search);
         this.autostart = params.get('autostart') === 'true';
@@ -44,8 +45,17 @@ class EventMode {
         }
     }
 
-    // ─── INIT ────────────────────────────────────────────────
+    // --- INIT ---
     init() {
+        // Guard: DOM refs and event listeners are wired once only.
+        // visualizer.js calls init() at startup AND on each Event button click —
+        // without this guard each click adds another 'ended' listener → double-fires transitions.
+        if (this._initialized) {
+            console.log('[EventMode] Already initialized — skipping re-init.');
+            return;
+        }
+        this._initialized = true;
+
         this.catalog = window.allLoveCatalog || [];
         this.audioEl = document.getElementById('catalogAudioPlayer');
 
@@ -92,7 +102,7 @@ class EventMode {
         console.log('[EventMode] Initialized. Tracks:', this.catalog.length);
     }
 
-    // ─── ACTIVATE ────────────────────────────────────────────
+    // --- ACTIVATE ---
     // Called when user switches to Event mode tab
     activate() {
         this.isActive = true;
@@ -118,7 +128,7 @@ class EventMode {
         }
     }
 
-    // ─── DEACTIVATE ──────────────────────────────────────────
+    // --- DEACTIVATE ---
     deactivate() {
         this.isActive = false;
         this.state = 'IDLE';
@@ -152,7 +162,7 @@ class EventMode {
         if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
     }
 
-    // ─── INTRO STATE (waiting for click) ─────────────────────
+    // --- INTRO STATE (waiting for click) ---
     _showIntroState() {
         const card = document.querySelector('.event-title-card');
         if (!card) return;
@@ -170,7 +180,7 @@ class EventMode {
         card.classList.add('visible');
     }
 
-    // ─── START ───────────────────────────────────────────────
+    // --- START ---
     start() {
         if (this.state !== 'IDLE') return;
         this.state = 'INTRO';
@@ -194,7 +204,7 @@ class EventMode {
         }, 2000);
     }
 
-    // ─── PLAY TRACK ──────────────────────────────────────────
+    // --- PLAY TRACK ---
     _playTrack(index) {
         if (!this.isActive) return;
 
@@ -241,7 +251,7 @@ class EventMode {
         });
     }
 
-    // ─── TRACK CARD ──────────────────────────────────────────
+    // --- TRACK CARD ---
     _showTrackCard(track, number) {
         const numStr = String(number).padStart(2, '0');
 
@@ -274,7 +284,7 @@ class EventMode {
         }, 3500);
     }
 
-    // ─── PROGRESS BAR ────────────────────────────────────────
+    // --- PROGRESS BAR ---
     _updateProgress() {
         if (this.state !== 'PLAYING_TRACK' || !this.audioEl) return;
 
@@ -296,7 +306,7 @@ class EventMode {
         }
     }
 
-    // ─── TRACK END HANDLER ───────────────────────────────────
+    // --- TRACK END HANDLER ---
     _onTrackEnd() {
         if (this.state !== 'PLAYING_TRACK' || !this.isActive) return;
 
@@ -307,7 +317,7 @@ class EventMode {
         }
     }
 
-    // ─── TRANSITION ──────────────────────────────────────────
+    // --- TRANSITION ---
     _transition(nextIndex) {
         if (!this.isActive) return;
         this.state = 'TRANSITION';
@@ -342,7 +352,7 @@ class EventMode {
         }, 1800);
     }
 
-    // ─── FINALE (THE PORTAL) ─────────────────────────────────
+    // --- FINALE (THE PORTAL) ---
     finale() {
         this.state = 'FINALE';
         console.log('[EventMode] FINALE — Portal sequence initiated');
@@ -397,7 +407,7 @@ class EventMode {
         }
     }
 
-    // ─── END SCREEN ──────────────────────────────────────────
+    // --- END SCREEN ---
     _end() {
         this.state = 'END';
         console.log('[EventMode] End screen');
@@ -420,7 +430,7 @@ class EventMode {
         }
     }
 
-    // ─── AUDIO FADE ──────────────────────────────────────────
+    // --- AUDIO FADE ---
     _fadeAudio(targetVolume, durationMs) {
         if (!this.audioEl) return;
 
@@ -447,6 +457,6 @@ class EventMode {
     }
 }
 
-// ─── EXPOSE GLOBALLY ─────────────────────────────────────────
+// --- EXPOSE GLOBALLY ---
 window.EventMode = EventMode;
 window.eventMode = new EventMode();

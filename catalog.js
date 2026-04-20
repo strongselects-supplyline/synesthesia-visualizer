@@ -1,7 +1,7 @@
 // ============================================================
 // Synesthesia Visualizer — ALL LOVE Catalog
 // past.El — Key → Hex Synesthesia System
-// Updated: March 16, 2026
+// Updated: March 28, 2026 — Cyanite AI data populated for 9/11 tracks
 // ============================================================
 
 // Key → Hex lookup — Ethan Payton's Personal Synesthesia System
@@ -22,9 +22,12 @@ const synMap = {
 };
 
 // ============================================================
-// ALL LOVE — 11 Tracks (April 10, 2026)
-// NOTE: Tracks with key "TBD" will render as black (#000000)
-// until Ethan updates BPM/key/mood data from the studio.
+// ALL LOVE — 11 Tracks (April 24, 2026)
+// Cyanite AI analysis populated for 9/11 tracks.
+// Green Light Patient + Luxury pending Cyanite run — render black (#000000) until updated.
+// ⚠️  Want U Bad: Cyanite analyzed as "Want U 2" (instrumental, Voice presence: None).
+//     Verify track name + confirm vocal vs. instrumental before curator pitches.
+// ⚠️  Like I Did: BPM confirmed 110 from Cyanite. Verify in DAW.
 // ============================================================
 
 window.allLoveCatalog = [
@@ -32,10 +35,11 @@ window.allLoveCatalog = [
         trackNumber: 1,
         id: 'i-like-girls',
         title: "I Like Girls",
-        bpm: 0,
-        key: "TBD",
+        bpm: 107,
+        key: "F# Minor",
         status: "album",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite: Sexy 70%, Chill 44%, R&B 74% (highest on album). No Happy% in analysis.
+        moods: { sexy: 70, chill: 44, happy: 35, sad: 10 },
         audioUrl: 'audio/i-like-girls.mp3'
     },
     {
@@ -45,6 +49,7 @@ window.allLoveCatalog = [
         bpm: 120,
         key: "B Minor",
         status: "single",
+        // Cyanite: Sexy 89%, Chill 57%, Romantic 55%, R&B 60%
         moods: { sexy: 89, chill: 57, happy: 38, sad: 10 },
         audioUrl: 'audio/see-me.mp3'
     },
@@ -55,6 +60,8 @@ window.allLoveCatalog = [
         bpm: 105,
         key: "C# Minor",
         status: "single",
+        // Cyanite: Sexy 87%, Chill 63%, Romantic 62%, R&B 59%
+        // ⚠️ BPM discrepancy: campaign kit says 98 BPM, Cyanite says 105. Verify from DAW.
         moods: { sexy: 87, chill: 63, happy: 38, sad: 10 },
         audioUrl: 'audio/east-side-love.mp3'
     },
@@ -62,10 +69,12 @@ window.allLoveCatalog = [
         trackNumber: 4,
         id: 'want-u-bad',
         title: "Want U Bad",
-        bpm: 0,
-        key: "TBD",
+        bpm: 114,
+        key: "G Minor",
         status: "album",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite analyzed as "Want U 2": Chill 65%, Happy 58%, Hip-Hop 52%
+        // ⚠️ Voice presence: None (may be instrumental). Sexy% not in Cyanite output — set 0 to flag.
+        moods: { sexy: 0, chill: 65, happy: 58, sad: 10 },
         audioUrl: 'audio/want-u-bad.mp3'
     },
     {
@@ -75,6 +84,7 @@ window.allLoveCatalog = [
         bpm: 0,
         key: "TBD",
         status: "album",
+        // ⛔ No Cyanite data yet. Upload to Cyanite.io to populate.
         moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
         audioUrl: 'audio/green-light-patient.mp3'
     },
@@ -85,6 +95,7 @@ window.allLoveCatalog = [
         bpm: 0,
         key: "TBD",
         status: "album",
+        // ⛔ No Cyanite data yet. Upload to Cyanite.io to populate.
         moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
         audioUrl: 'audio/luxury.mp3'
     },
@@ -92,10 +103,11 @@ window.allLoveCatalog = [
         trackNumber: 7,
         id: 'worth-it',
         title: "Worth It",
-        bpm: 0,
-        key: "TBD",
+        bpm: 97,
+        key: "F Minor",
         status: "album",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite: Sexy 79%, Chill 57%, R&B 57%
+        moods: { sexy: 79, chill: 57, happy: 40, sad: 10 },
         audioUrl: 'audio/worth-it.mp3'
     },
     {
@@ -105,6 +117,8 @@ window.allLoveCatalog = [
         bpm: 124,
         key: "A# Minor",
         status: "single",
+        // Cyanite: Sexy 85%, Happy 69%, Uplifting 58%, Energetic 48%, R&B 25%, Hip-Hop 27%
+        // Lowest chill on EP (36%) — Electronic Soul / KAYTRANADA lane
         moods: { sexy: 85, chill: 36, happy: 69, sad: 10 },
         audioUrl: 'audio/sweet-frustration.mp3'
     },
@@ -112,36 +126,42 @@ window.allLoveCatalog = [
         trackNumber: 9,
         id: 'like-i-did',
         title: "Like I Did",
-        bpm: 0,
-        key: "TBD",
+        bpm: 110,
+        key: "D Minor",
         status: "single",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite: Sexy 60%, Chill 73% (highest on EP), Romantic 63%, Happy 69%, R&B 57%
+        moods: { sexy: 60, chill: 73, happy: 69, sad: 10 },
         audioUrl: 'audio/like-i-did.mp3'
     },
     {
         trackNumber: 10,
         id: 'just-say-so',
         title: "Just Say So",
-        bpm: 0,
-        key: "TBD",
+        bpm: 122,
+        key: "Bb Minor",
         status: "album",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite: Sexy 73%, Chill 59%, Romantic 57%, Happy 56%, R&B 60%, Hip-Hop 43%
+        moods: { sexy: 73, chill: 59, happy: 56, sad: 10 },
         audioUrl: 'audio/just-say-so.mp3'
     },
     {
         trackNumber: 11,
         id: 'reconnect',
         title: "Reconnect",
-        bpm: 0,
-        key: "TBD",
+        bpm: 82,
+        key: "D Minor",
         status: "album",
-        moods: { sexy: 0, chill: 0, happy: 0, sad: 0 },
+        // Cyanite: Sexy 88%, Chill 52%, R&B 56%.
+        // ⚠️ Cyanite reported D Major — Ethan confirmed D Minor / F Major (relative pair). Key corrected.
+        moods: { sexy: 88, chill: 52, happy: 40, sad: 10 },
         audioUrl: 'audio/reconnect.mp3'
     },
 ];
 
 // Compute derived fields
 window.allLoveCatalog.forEach(track => {
+    // intensity: 0–1, drives default visualizer energy level per track
+    // || 50 fallback keeps TBD tracks at neutral 0.5
     track.intensity = ((track.moods.sexy || 50) + (track.moods.chill || 50)) / 200;
     track.synHex = synMap[track.key] || '#000000';
 });

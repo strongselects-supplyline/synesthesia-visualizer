@@ -109,9 +109,31 @@
                 <div id="midiLearnContainer" class="midi-learn-grid"></div>
             </div>
 
+            <!-- Export Section (hidden in embed mode) -->
+            <div class="export-section param-section" id="exportSection">
+                <div class="param-row">
+                    <span class="param-label">Export</span>
+                    <span class="export-hint">R = 30s quick</span>
+                </div>
+                <div class="export-dur-row">
+                    <button class="export-dur-btn glass-btn" data-dur="15">15s</button>
+                    <button class="export-dur-btn glass-btn active" data-dur="30">30s</button>
+                    <button class="export-dur-btn glass-btn" data-dur="60">60s</button>
+                </div>
+                <div class="export-audio-row">
+                    <label for="exportAudioToggle" class="param-label">Audio</label>
+                    <input type="checkbox" id="exportAudioToggle" checked>
+                </div>
+                <div class="export-actions">
+                    <button id="exportCaptureBtn" class="glass-btn export-capture-btn">CAPTURE</button>
+                    <button id="exportStillBtn" class="glass-btn export-still-btn">PNG</button>
+                </div>
+                <div id="exportStatus" class="export-status"></div>
+                <div id="exportLastFile" class="export-lastfile"></div>
+            </div>
+
             <div class="panel-footer">
-                <span class="footer-hint"><span class="hint-key">F</span> fullscreen · <span class="hint-key">TAB</span>
-                    hide</span>
+                <span class="footer-hint"><span class="hint-key">F</span> fullscreen · <span class="hint-key">TAB</span> hide · <span class="hint-key">R</span> record</span>
             </div>
         </div>
     </div>
@@ -145,10 +167,12 @@
         <span>past.El</span>
     </div>
 
+    <script src="track-identity.js"></script>
     <script src="catalog.js"></script>
     <script src="audio.js"></script>
     <script src="midi.js"></script>
     <script src="event.js"></script>
+    <script src="export.js"></script>
     <script type="module" src="visualizer.js"></script>
 
     <script>

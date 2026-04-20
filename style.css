@@ -788,3 +788,122 @@ body.embed-mode #controlPanel {
     color: rgba(255,255,255,0.3);
     letter-spacing: 0.05em;
 }
+
+/* ============================================================
+   EXPORT SECTION
+   ============================================================ */
+
+.export-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.export-hint {
+    font-size: 0.62rem;
+    color: rgba(255, 255, 255, 0.25);
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.5px;
+}
+
+.export-dur-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.export-dur-btn {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 0.75rem;
+}
+
+.export-audio-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 4px;
+}
+
+.export-audio-row input[type="checkbox"] {
+    accent-color: var(--accent-color);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.export-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.export-capture-btn {
+    flex: 2;
+    background: rgba(71, 230, 166, 0.06);
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    font-weight: 700;
+    letter-spacing: 1px;
+    transition: all 0.2s ease;
+}
+
+.export-capture-btn:hover {
+    background: rgba(71, 230, 166, 0.14);
+    box-shadow: 0 0 16px rgba(71, 230, 166, 0.12);
+}
+
+.export-capture-btn.recording {
+    background: rgba(220, 60, 60, 0.1);
+    border-color: #dc3c3c;
+    color: #dc3c3c;
+    animation: rec-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes rec-pulse {
+    from { box-shadow: 0 0 4px rgba(220, 60, 60, 0.2); }
+    to   { box-shadow: 0 0 16px rgba(220, 60, 60, 0.5); }
+}
+
+.export-still-btn {
+    flex: 1;
+}
+
+.export-status {
+    margin-top: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.68rem;
+    color: var(--accent-color);
+    letter-spacing: 0.5px;
+    min-height: 14px;
+}
+
+.export-lastfile {
+    font-family: 'Courier New', monospace;
+    font-size: 0.6rem;
+    color: rgba(255, 255, 255, 0.25);
+    letter-spacing: 0.3px;
+    word-break: break-all;
+    min-height: 10px;
+    margin-top: 2px;
+}
+
+/* Hide export in embed mode */
+body.embed-mode #exportSection {
+    display: none !important;
+}
+
+/* ============================================================
+   MOBILE — touch panel toggle
+   ============================================================ */
+
+@media (max-width: 600px) {
+    /* Panel uses translateX, not left — fix open class for mobile */
+    .control-panel.panel-visible {
+        transform: translateX(0);
+    }
+
+    /* Bigger touch targets for sliders */
+    .glass-range::-webkit-slider-thumb {
+        width: 24px;
+        height: 24px;
+    }
+}
