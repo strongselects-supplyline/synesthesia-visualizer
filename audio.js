@@ -15,6 +15,8 @@ let currentStream = null;
 let currentBufferSource = null;
 let catalogAudioEl = null;
 let catalogMediaSource = null;
+let catalogMediaConnected = false;
+let analyserConnected = false;
 
 // --- Exposed Audio Data (consumed by visualizer.js) ---
 window.audioData = {
@@ -48,6 +50,14 @@ window.audioData = {
     detectedHex: '',       // synesthesia hex for detected key
 
     isActive: false
+};
+
+window.catalogPlayback = {
+    state: 'idle',
+    trackId: '',
+    assetState: '',
+    url: '',
+    message: 'Select a track, then press Play.'
 };
 
 // --- Tuning Constants ---
@@ -101,27 +111,7 @@ const MAJOR_PROFILE = [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.
 const MINOR_PROFILE = [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0];
 const KEY_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
-// Synesthesia hex map — Ethan Payton's Personal System
-// Includes both sharp and flat enharmonic equivalents
-const SYN_MAP = {
-    'C Major': '#00A3A3', 'A Minor': '#00A3A3',       // Teal
-    'G Major': '#FFFFF0', 'E Minor': '#FFFFF0',       // Cream
-    'D Major': '#E2D077', 'B Minor': '#E2D077',       // Muted Yellow
-    'A Major': '#C4651D', 'F# Minor': '#C4651D',      // Fox Brown
-    'E Major': '#DA70D6', 'C# Minor': '#DA70D6',      // Pink-Purple
-    'B Major': '#B0E0E6', 'G# Minor': '#B0E0E6',      // Baby Blue
-    'Gb Major': '#FFFAFA', 'F# Major': '#FFFAFA',     // Snow White (enharmonic pair)
-    'Eb Minor': '#FFFAFA',
-    'Db Major': '#DAA520', 'C# Major': '#DAA520',     // Goldenrod / GOLD (enharmonic pair)
-    'Bb Minor': '#DAA520',
-    'Ab Major': '#884513', 'G# Major': '#884513',     // Brown (enharmonic pair)
-    'F Minor': '#884513',
-    'Eb Major': '#4B0082', 'D# Major': '#4B0082',     // Dark Purple
-    'C Minor': '#4B0082',
-    'Bb Major': '#A52A2A', 'A# Major': '#A52A2A',     // Maroon
-    'G Minor': '#A52A2A',
-    'F Major': '#DC143C', 'D Minor': '#DC143C',       // Red
-};
+const SYN_MAP = window.Synesthesia.SYN_MAP;
 
 // --- DOM refs ---
 const fileInput = document.getElementById('audioFileUpload');
@@ -217,12 +207,16 @@ function ensureContext() {
 // CATALOG PLAYBACK
 // ============================================================
 
-window.playCatalogTrack = function (url) {
-    if (!url) return;
+function setCatalogPlayback(state, message, extra = {}) {
+    window.catalogPlayback = {
+        ...window.catalogPlayback,
+        ...extra,
+        state,
+        message
+    };
+}
 
-    ensureContext();
-    teardownSource();
-
+function getCatalogAudioEl() {
     catalogAudioEl = document.getElementById('catalogAudioPlayer');
     if (!catalogAudioEl) {
         catalogAudioEl = document.createElement('audio');
@@ -230,25 +224,142 @@ window.playCatalogTrack = function (url) {
         catalogAudioEl.crossOrigin = 'anonymous';
         document.body.appendChild(catalogAudioEl);
     }
+    return catalogAudioEl;
+}
 
-    catalogAudioEl.src = url;
+window.getTrackAudioSource = function (track) {
+    if (!track) {
+        return { canPlay: false, state: 'missing', url: '', label: 'Not bundled' };
+    }
+    const asset = track.asset || {};
+    const url = asset.url || track.audioUrl || '';
+    const state = asset.state || (url ? 'available' : 'missing');
+    return {
+        canPlay: Boolean(url) && state !== 'missing',
+        state,
+        url,
+        label: asset.label || (state === 'demo' ? 'Demo audio' : state === 'available' ? 'Audio ready' : 'Not bundled'),
+        note: asset.note || '',
+        trackId: track.id || ''
+    };
+};
+
+window.stageCatalogTrack = function (track) {
+    const sourceInfo = window.getTrackAudioSource(track);
+    const audioEl = getCatalogAudioEl();
+
+    if (catalogAudioEl) {
+        catalogAudioEl.pause();
+        catalogAudioEl.currentTime = 0;
+    }
+    window.audioData.isActive = false;
+
+    if (sourceInfo.canPlay) {
+        audioEl.src = sourceInfo.url;
+        const label = sourceInfo.state === 'demo'
+            ? 'Demo audio ready. Press Play.'
+            : 'Audio ready. Press Play.';
+        setCatalogPlayback('ready', label, {
+            trackId: sourceInfo.trackId,
+            assetState: sourceInfo.state,
+            url: sourceInfo.url
+        });
+        return sourceInfo;
+    }
+
+    audioEl.removeAttribute('src');
+    setCatalogPlayback('missing', 'Audio not bundled. Visuals are still mapped to Ethan\'s key color.', {
+        trackId: sourceInfo.trackId,
+        assetState: sourceInfo.state,
+        url: ''
+    });
+    return sourceInfo;
+};
+
+window.playCurrentCatalogTrack = function () {
+    const catalog = window.allLoveCatalog || [];
+    const current = window.currentTrack || catalog[0];
+    return window.playCatalogTrack(current);
+};
+
+window.playCatalogTrack = function (trackOrUrl, options = {}) {
+    const track = typeof trackOrUrl === 'object' ? trackOrUrl : null;
+    const sourceInfo = track
+        ? window.getTrackAudioSource(track)
+        : { canPlay: Boolean(trackOrUrl), state: 'available', url: trackOrUrl, label: 'Audio ready', trackId: '' };
+
+    if (!sourceInfo.canPlay) {
+        setCatalogPlayback('missing', 'Audio not bundled. Visuals are still mapped to Ethan\'s key color.', {
+            trackId: sourceInfo.trackId,
+            assetState: sourceInfo.state,
+            url: ''
+        });
+        return Promise.resolve(false);
+    }
+
+    teardownSource();
+
+    catalogAudioEl = getCatalogAudioEl();
+    catalogAudioEl.src = sourceInfo.url;
+    catalogAudioEl.volume = typeof options.volume === 'number' ? options.volume : 1;
+
+    catalogAudioEl.onerror = () => {
+        window.audioData.isActive = false;
+        setCatalogPlayback('missing', 'Audio file unavailable. Visuals continue without playback.', {
+            trackId: sourceInfo.trackId,
+            assetState: 'missing',
+            url: ''
+        });
+    };
+
+    const playPromise = catalogAudioEl.play();
+
+    ensureContext();
 
     if (!catalogMediaSource) {
         catalogMediaSource = audioCtx.createMediaElementSource(catalogAudioEl);
     }
 
-    catalogMediaSource.connect(analyser);
-    analyser.connect(audioCtx.destination);
+    if (!catalogMediaConnected) {
+        catalogMediaSource.connect(analyser);
+        catalogMediaConnected = true;
+    }
+    if (!analyserConnected) {
+        analyser.connect(audioCtx.destination);
+        analyserConnected = true;
+    }
 
-    catalogAudioEl.play().then(() => {
-        startProcessing();
-    }).catch(err => {
-        console.error('Catalog playback failed:', err);
+    setCatalogPlayback('starting', 'Starting audio...', {
+        trackId: sourceInfo.trackId,
+        assetState: sourceInfo.state,
+        url: sourceInfo.url
     });
 
     catalogAudioEl.onended = () => {
         window.audioData.isActive = false;
+        setCatalogPlayback('ended', 'Audio ended. Press Play to restart.', {
+            trackId: sourceInfo.trackId,
+            assetState: sourceInfo.state,
+            url: sourceInfo.url
+        });
     };
+
+    return playPromise.then(() => {
+        startProcessing();
+        setCatalogPlayback('playing', sourceInfo.state === 'demo' ? 'Playing demo audio.' : 'Playing.', {
+            trackId: sourceInfo.trackId,
+            assetState: sourceInfo.state,
+            url: sourceInfo.url
+        });
+        return true;
+    }).catch(err => {
+        const blocked = err && err.name === 'NotAllowedError';
+        setCatalogPlayback(blocked ? 'blocked' : 'error',
+            blocked ? 'Press Play to start audio.' : 'Audio could not start. Visuals continue.',
+            { trackId: sourceInfo.trackId, assetState: sourceInfo.state, url: sourceInfo.url }
+        );
+        return false;
+    });
 };
 
 window.stopCatalogTrack = function () {
@@ -257,6 +368,7 @@ window.stopCatalogTrack = function () {
         catalogAudioEl.currentTime = 0;
     }
     window.audioData.isActive = false;
+    setCatalogPlayback('stopped', 'Stopped. Press Play to restart.');
 };
 
 // ============================================================
@@ -410,21 +522,7 @@ function computeEvolution(history) {
 // KEY DETECTION — Chromagram + Krumhansl-Schmuckler
 // ============================================================
 
-// Relative major/minor pairs share the same root (e.g., A Major = F# Minor)
-const RELATIVE_MINOR_MAP = {
-    'C Major': 'A Minor', 'A Minor': 'C Major',
-    'G Major': 'E Minor', 'E Minor': 'G Major',
-    'D Major': 'B Minor', 'B Minor': 'D Major',
-    'A Major': 'F# Minor', 'F# Minor': 'A Major',
-    'E Major': 'C# Minor', 'C# Minor': 'E Major',
-    'B Major': 'G# Minor', 'G# Minor': 'B Major',
-    'Gb Major': 'Eb Minor', 'Eb Minor': 'Gb Major',
-    'Db Major': 'Bb Minor', 'Bb Minor': 'Db Major',
-    'Ab Major': 'F Minor', 'F Minor': 'Ab Major',
-    'Eb Major': 'C Minor', 'C Minor': 'Eb Major',
-    'Bb Major': 'G Minor', 'G Minor': 'Bb Major',
-    'F Major': 'D Minor', 'D Minor': 'F Major',
-};
+const RELATIVE_MINOR_MAP = window.Synesthesia.RELATIVE_KEY_MAP;
 
 let keyDebugTimer = 0;
 

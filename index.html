@@ -7,7 +7,7 @@
     <title>Synesthesia Visualizer // past.El</title>
     <meta name="description"
         content="Real-time synesthetic music visualizer by past.El. Experience music as color, light, and motion.">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=ethan-upgrade-20260617e">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -35,6 +35,7 @@
     <div id="panelHint" class="panel-hint">
         <span class="hint-key">TAB</span> controls
     </div>
+    <button id="mobilePanelToggle" class="mobile-panel-toggle" aria-label="Open controls">Controls</button>
 
     <!-- ================================================
          CONTROL PANEL — Hidden by default, slides in from left
@@ -57,6 +58,14 @@
             <div id="catalogControls" class="control-group">
                 <label for="trackSelector">Select Track</label>
                 <select id="trackSelector" class="glass-select"></select>
+                <div class="track-meta">
+                    <span id="trackColorName" class="track-color-name">Unmapped</span>
+                    <span id="trackAudioState" class="track-audio-state">Audio pending</span>
+                </div>
+                <div class="catalog-actions">
+                    <button id="catalogPlayBtn" class="glass-btn catalog-play-btn">Play</button>
+                    <button id="catalogStopBtn" class="glass-btn catalog-stop-btn">Stop</button>
+                </div>
                 <div id="catalogPlaybackStatus" class="playback-status"></div>
             </div>
 
@@ -104,8 +113,9 @@
             <div class="param-section midi-section">
                 <div class="param-row">
                     <span class="param-label">MIDI</span>
-                    <span id="midiStatus" class="midi-status">Searching...</span>
+                    <span id="midiStatus" class="midi-status">Disabled</span>
                 </div>
+                <button id="enableMidiBtn" class="glass-btn midi-enable-btn">Enable MIDI</button>
                 <div id="midiLearnContainer" class="midi-learn-grid"></div>
             </div>
 
@@ -167,13 +177,14 @@
         <span>past.El</span>
     </div>
 
-    <script src="track-identity.js"></script>
-    <script src="catalog.js"></script>
-    <script src="audio.js"></script>
-    <script src="midi.js"></script>
-    <script src="event.js"></script>
-    <script src="export.js"></script>
-    <script type="module" src="visualizer.js"></script>
+    <script src="synesthesia.js?v=ethan-upgrade-20260617e"></script>
+    <script src="track-identity.js?v=ethan-upgrade-20260617e"></script>
+    <script src="catalog.js?v=ethan-upgrade-20260617e"></script>
+    <script src="audio.js?v=ethan-upgrade-20260617e"></script>
+    <script src="midi.js?v=ethan-upgrade-20260617e"></script>
+    <script src="event.js?v=ethan-upgrade-20260617e"></script>
+    <script src="export.js?v=ethan-upgrade-20260617e"></script>
+    <script type="module" src="visualizer.js?v=ethan-upgrade-20260617e"></script>
 
     <script>
         // ─── URL PARAM HANDLING ───────────────────────────────────────────
@@ -185,8 +196,9 @@
                 document.body.classList.add('embed-mode');
             }
 
-            // ?autoplay=true — auto-switch to Catalog mode and start first track
+            // ?autoplay=true — preserve link intent, but wait for a user gesture before audio starts
             if (params.get('autoplay') === 'true') {
+                window.catalogAutoplayRequested = true;
                 window.addEventListener('DOMContentLoaded', () => {
                     const catalogBtn = document.getElementById('modeCatalogBtn');
                     if (catalogBtn) setTimeout(() => catalogBtn.click(), 500);
@@ -201,15 +213,17 @@
                 });
             }
 
-            // ?track=id — open to a specific catalog track
+            // ?track=id — open to a specific catalog track. Numeric legacy indexes still work.
             const trackId = params.get('track');
             if (trackId) {
                 window.addEventListener('DOMContentLoaded', () => {
                     const sel = document.getElementById('trackSelector');
                     if (sel) {
                         setTimeout(() => {
-                            const opt = Array.from(sel.options).find(o => o.value === trackId);
-                            if (opt) { sel.value = trackId; sel.dispatchEvent(new Event('change')); }
+                            const opt = Array.from(sel.options).find(o =>
+                                o.value === trackId || o.dataset.index === trackId || o.dataset.trackId === trackId
+                            );
+                            if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change')); }
                         }, 800);
                     }
                 });
@@ -234,9 +248,13 @@
 
             // Catalog playback status
             const player = document.getElementById('catalogAudioPlayer');
+            const playback = window.catalogPlayback || {};
             if (statusEl && player && player.src && !player.paused) {
                 const pct = player.duration ? Math.round((player.currentTime / player.duration) * 100) : 0;
-                statusEl.textContent = `▶ Playing... ${pct}%`;
+                statusEl.textContent = `Playing... ${pct}%`;
+                statusEl.style.opacity = '1';
+            } else if (statusEl && playback.message) {
+                statusEl.textContent = playback.message;
                 statusEl.style.opacity = '1';
             } else if (statusEl) {
                 statusEl.style.opacity = '0';

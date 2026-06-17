@@ -4,6 +4,7 @@
 // ============================================================
 
 let midiAccess = null;
+let midiEnabled = false;
 
 // --- Default AKAI mappings (user can override via MIDI Learn) ---
 let ccMap = {
@@ -69,6 +70,7 @@ function buildMidiLearnUI() {
         learnBtn.className = 'glass-btn midi-learn-btn';
         learnBtn.textContent = 'Learn';
         learnBtn.id = `midi-learn-${key}`;
+        learnBtn.disabled = true;
         learnBtn.addEventListener('click', () => startLearn(key, learnBtn));
 
         row.appendChild(label);
@@ -76,6 +78,19 @@ function buildMidiLearnUI() {
         row.appendChild(learnBtn);
         container.appendChild(row);
     }
+}
+
+function setMidiStatus(text, className = '') {
+    const statusEl = document.getElementById('midiStatus');
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.className = 'midi-status' + (className ? ` ${className}` : '');
+}
+
+function setLearnButtonsEnabled(enabled) {
+    document.querySelectorAll('.midi-learn-btn').forEach(btn => {
+        btn.disabled = !enabled;
+    });
 }
 
 function startLearn(paramKey, btnEl) {
@@ -201,7 +216,8 @@ function handleNoteOn(note, velocity) {
 
         const trackIndex = note - baseNote;
         if (window.currentMode === 'catalog' && typeof window.setTrack === 'function') {
-            document.getElementById('trackSelector').value = trackIndex;
+            const track = window.allLoveCatalog[trackIndex];
+            document.getElementById('trackSelector').value = track.id;
             window.setTrack(trackIndex);
         }
     }
@@ -212,15 +228,18 @@ function handleNoteOn(note, velocity) {
 // ============================================================
 
 function initMIDI() {
+    if (midiEnabled) return;
+    midiEnabled = true;
+
     if (!navigator.requestMIDIAccess) {
-        console.warn('Web MIDI API not supported');
+        setMidiStatus('Unavailable');
         return;
     }
 
+    setMidiStatus('Requesting...');
     navigator.requestMIDIAccess()
         .then(access => {
             midiAccess = access;
-            console.log('MIDI Ready!');
 
             // Connect all existing inputs
             for (let input of midiAccess.inputs.values()) {
@@ -231,19 +250,17 @@ function initMIDI() {
             midiAccess.onstatechange = (e) => {
                 if (e.port.type === 'input' && e.port.state === 'connected') {
                     e.port.onmidimessage = handleMIDIMessage;
-                    console.log(`MIDI connected: ${e.port.name}`);
                 }
             };
 
             // Update status indicator
-            const statusEl = document.getElementById('midiStatus');
-            if (statusEl) {
-                statusEl.textContent = 'MIDI: Connected';
-                statusEl.classList.add('connected');
-            }
+            setMidiStatus('Connected', 'connected');
+            setLearnButtonsEnabled(true);
         })
         .catch(err => {
-            console.error('MIDI access failed:', err);
+            midiEnabled = false;
+            setMidiStatus(err && err.name === 'NotAllowedError' ? 'Denied' : 'Unavailable');
+            setLearnButtonsEnabled(false);
         });
 }
 
@@ -254,9 +271,13 @@ loadMappings();
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         buildMidiLearnUI();
-        initMIDI();
+        setMidiStatus('Disabled');
+        const enableBtn = document.getElementById('enableMidiBtn');
+        if (enableBtn) enableBtn.addEventListener('click', initMIDI);
     });
 } else {
     buildMidiLearnUI();
-    initMIDI();
+    setMidiStatus('Disabled');
+    const enableBtn = document.getElementById('enableMidiBtn');
+    if (enableBtn) enableBtn.addEventListener('click', initMIDI);
 }

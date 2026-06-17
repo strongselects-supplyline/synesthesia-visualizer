@@ -65,16 +65,22 @@
 
         // Build stream
         let stream;
+        let captureAudioMode = 'video-only';
         try {
             const videoStream = canvas.captureStream(60);
 
             if (includeAudio) {
                 // Try to get the audio destination stream
                 const audioEl = document.getElementById('catalogAudioPlayer');
-                if (audioEl && audioEl.captureStream) {
+                if (audioEl && audioEl.captureStream && audioEl.src && !audioEl.paused) {
                     const audioStream = audioEl.captureStream();
                     const audioTracks = audioStream.getAudioTracks();
-                    stream = new MediaStream([...videoStream.getVideoTracks(), ...audioTracks]);
+                    if (audioTracks.length > 0) {
+                        stream = new MediaStream([...videoStream.getVideoTracks(), ...audioTracks]);
+                        captureAudioMode = 'video+audio';
+                    } else {
+                        stream = videoStream;
+                    }
                 } else {
                     // No audio available — video only
                     stream = videoStream;
@@ -122,22 +128,22 @@
             const trackId = getCurrentTrackId();
             const mode = window.currentMode || 'catalog';
             const filename = `pastEl_${trackId}_${mode}_${durationSec}s_${Date.now()}.${ext}`;
-            downloadBlob(blob, filename);
+            const downloaded = downloadBlob(blob, filename);
             setLastFile(filename);
             isRecording = false;
             updateCaptureBtn(false);
-            setStatus('Saved: ' + filename.substring(0, 36) + '…');
+            setStatus((downloaded ? 'Saved: ' : 'Prepared: ') + filename.substring(0, 36) + '…');
         };
 
         recorder.start(250); // collect data every 250ms
 
         // Countdown
         let remaining = durationSec;
-        setStatus('● REC ' + remaining + 's');
+        setStatus(`REC ${remaining}s · ${captureAudioMode}`);
         countdownInterval = setInterval(() => {
             remaining--;
             if (remaining > 0) {
-                setStatus('● REC ' + remaining + 's');
+                setStatus(`REC ${remaining}s · ${captureAudioMode}`);
             }
         }, 1000);
 
@@ -166,9 +172,9 @@
             if (!blob) { setStatus('Still capture failed'); return; }
             const trackId = getCurrentTrackId();
             const filename = `pastEl_${trackId}_${Date.now()}.png`;
-            downloadBlob(blob, filename);
+            const downloaded = downloadBlob(blob, filename);
             setLastFile(filename);
-            setStatus('PNG: ' + filename);
+            setStatus((downloaded ? 'PNG: ' : 'PNG ready: ') + filename);
         }, 'image/png');
     }
 
@@ -177,18 +183,29 @@
         const sel = document.getElementById('trackSelector');
         if (sel && sel.value !== undefined) {
             const catalog = window.allLoveCatalog;
-            if (catalog && catalog[sel.value]) return catalog[sel.value].id;
+            if (catalog) {
+                const track = catalog.find(t => t.id === sel.value);
+                if (track) return track.id;
+            }
         }
         return 'live';
     }
 
     function downloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        let downloaded = false;
+        try {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            downloaded = true;
+        } catch (e) {
+            console.warn('[Export] Download was blocked after blob creation:', e);
+        } finally {
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+        return downloaded;
     }
 
     function setStatus(text) {

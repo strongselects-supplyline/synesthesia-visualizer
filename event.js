@@ -218,8 +218,6 @@ class EventMode {
             return;
         }
 
-        console.log(`[EventMode] Playing track ${index + 1}/${this.catalog.length}: ${track.title}`);
-
         // Set visualizer color via existing function
         if (typeof window.setTrackById === 'function') {
             window.setTrackById(track.id);
@@ -238,16 +236,21 @@ class EventMode {
             this.progressBar.classList.add('visible');
         }
 
-        // Play audio
-        this.audioEl.volume = 0;
-        this.audioEl.src = track.audioUrl;
-        this.audioEl.play().then(() => {
-            this._fadeAudio(1, 1500);
-        }).catch(err => {
-            console.warn('[EventMode] Audio play failed:', err.message);
-            // If audio fails (no file), simulate track duration and move on
-            console.log('[EventMode] Simulating 10s track (no audio file)');
+        const sourceInfo = window.getTrackAudioSource
+            ? window.getTrackAudioSource(track)
+            : { canPlay: Boolean(track.audioUrl) };
+
+        if (!sourceInfo.canPlay) {
             setTimeout(() => this._onTrackEnd(), 10000);
+            return;
+        }
+
+        window.playCatalogTrack(track, { volume: 0 }).then(started => {
+            if (started) {
+                this._fadeAudio(1, 1500);
+            } else {
+                setTimeout(() => this._onTrackEnd(), 10000);
+            }
         });
     }
 

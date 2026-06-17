@@ -57,9 +57,11 @@ let targetColor = new THREE.Color('#2d3142');
 let intensity = 0.5;
 let forgeStage = 1.0;
 let currentMode = 'catalog';
+let currentTrackIndex = 0;
 window.currentMode = currentMode;
 window.intensity = intensity;
 window.forgeStage = forgeStage;
+window.currentTrack = null;
 
 // --- Active identity (set by applyTrackIdentity) ---
 let activeIdentity = null;
@@ -157,7 +159,7 @@ const GrainShader = {
     uniforms: {
         tDiffuse:   { value: null },
         uTime:      { value: 0.0 },
-        uIntensity: { value: 0.06 }
+        uIntensity: { value: 0.025 }
     },
     vertexShader: `
         varying vec2 vUv;
@@ -184,6 +186,15 @@ if (FX_ENABLED[PERF_TIER]) composer.addPass(grainPass);
 // --- Output pass (color space / tone mapping) ---
 const outputPass = new OutputPass();
 composer.addPass(outputPass);
+
+function cssGlow(hex, alpha = 0.25) {
+    const raw = String(hex || '').replace('#', '');
+    if (raw.length !== 6) return `rgba(71, 230, 166, ${alpha})`;
+    const r = parseInt(raw.slice(0, 2), 16);
+    const g = parseInt(raw.slice(2, 4), 16);
+    const b = parseInt(raw.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // ============================================================
 // BACKGROUND WASH — Zonal (bass warmth bottom, cool shimmer top)
@@ -247,6 +258,17 @@ const washMaterial = new THREE.ShaderMaterial({
             float breathe = sin(uTime * 0.15) * 0.3 + 0.7;
             bg *= breathe;
 
+            // Cinematic key aura: gives idle state depth before audio starts.
+            vec2 centered = vUv - vec2(0.5, 0.46);
+            float coreAura = 1.0 - smoothstep(0.0, 0.82, length(vec2(centered.x * 1.15, centered.y * 1.7)));
+            float lowerBloom = 1.0 - smoothstep(0.0, 0.72, length(vec2((x - 0.5) * 1.35, y * 1.05)));
+            float diagonalVeil = sin((x + y) * 5.0 + uTime * 0.12) * 0.5 + 0.5;
+            diagonalVeil *= 1.0 - smoothstep(0.0, 0.9, abs(x - 0.52) + abs(y - 0.48));
+            float edgeDepth = pow(centerX, 2.0) * (0.018 + uHighs * 0.03);
+            vec3 keyAura = mix(uColor, vec3(0.12, 0.21, 0.30), 0.24);
+            bg += keyAura * (coreAura * (0.035 + uSongPhase * 0.05) + lowerBloom * 0.045 + diagonalVeil * 0.018) * uForge;
+            bg += vec3(0.01, 0.014, 0.022) * edgeDepth;
+
             // === BASS ZONE — FLOWING, ORGANIC SHAPE ===
             float bassSquash = 1.8 - uEvoBass * 0.5;
             // Layered sine waves create flowing, aurora-like motion
@@ -292,9 +314,9 @@ const washMaterial = new THREE.ShaderMaterial({
 
             // Compose
             vec3 col = bg;
-            col += bassColor * bassGlow * uForge * (0.50 + uSongPhase * 0.12);
-            col += uColor * midGlow * uForge;
-            col += (uColor * 0.3 + vec3(0.5, 0.6, 0.8)) * highGlow * uForge;
+            col += bassColor * bassGlow * uForge * (0.42 + uSongPhase * 0.10);
+            col += uColor * midGlow * uForge * 0.9;
+            col += (uColor * 0.32 + vec3(0.42, 0.50, 0.64)) * highGlow * uForge;
             col += vec3(1.0, 0.97, 0.92) * flash * 0.35;
 
             // Vignette loosens at higher songPhase
@@ -739,7 +761,8 @@ function applyTrackIdentity(track) {
             aberrationPass.uniforms.uStrength.value = id.shader.aberrationBase || 0.0015;
         }
         if (typeof grainPass !== 'undefined' && FX_ENABLED[PERF_TIER]) {
-            grainPass.uniforms.uIntensity.value = id.shader.grainBase || 0.06;
+            const identityGrain = id.shader.grainBase || 0.06;
+            grainPass.uniforms.uIntensity.value = Math.min(identityGrain * 0.25, 0.028);
         }
     }
 }
@@ -749,11 +772,26 @@ function triggerModeTransition() {
     transitionStart = performance.now();
 }
 
-function setTrack(index) {
+function resolveTrackIndex(trackRef) {
+    const catalog = window.allLoveCatalog || [];
+    if (typeof trackRef === 'number' || /^\d+$/.test(String(trackRef))) {
+        const numeric = Number(trackRef);
+        if (catalog[numeric]) return numeric;
+    }
+    return catalog.findIndex(t => t.id === trackRef);
+}
+
+function setTrack(trackRef, options = {}) {
+    const index = resolveTrackIndex(trackRef);
     const track = window.allLoveCatalog[index];
     if (!track) return;
+    currentTrackIndex = index;
+    window.currentTrack = track;
     targetColor.set(track.synHex || '#2d3142');
     intensity = track.intensity || 0.5;
+
+    const sel = document.getElementById('trackSelector');
+    if (sel && sel.value !== track.id) sel.value = track.id;
 
     const el = document.getElementById('intensitySlider');
     if (el) el.value = Math.round(intensity * 100);
@@ -761,23 +799,34 @@ function setTrack(index) {
     const hex = document.getElementById('hexDisplay');
     if (hex) hex.textContent = track.synHex || '#2d3142';
     document.documentElement.style.setProperty('--accent-color', track.synHex || '#47e6a6');
+    document.documentElement.style.setProperty('--accent-glow', cssGlow(track.synHex, 0.25));
+
+    const colorName = document.getElementById('trackColorName');
+    if (colorName) colorName.textContent = track.hasMappedKey ? `${track.synName} · ${track.synLabel}` : 'Key pending · Unmapped';
+
+    const audioState = document.getElementById('trackAudioState');
+    if (audioState) {
+        audioState.textContent = track.asset ? track.asset.label : 'Audio pending';
+        audioState.dataset.state = track.audioState || 'missing';
+    }
 
     // Apply per-track visual identity
     applyTrackIdentity(track);
 
-    if (track.audioUrl && typeof window.playCatalogTrack === 'function') {
-        window.playCatalogTrack(track.audioUrl);
+    if (typeof window.stageCatalogTrack === 'function') {
+        window.stageCatalogTrack(track);
     }
+
+    if (options.play && typeof window.playCatalogTrack === 'function') {
+        window.playCatalogTrack(track);
+    }
+    return track;
 }
 window.setTrack = setTrack;
 
 // Set track by ID (used by Event Mode)
 function setTrackById(id) {
-    const catalog = window.allLoveCatalog || [];
-    const index = catalog.findIndex(t => t.id === id);
-    if (index >= 0) {
-        setTrack(index);
-    }
+    return setTrack(id);
 }
 window.setTrackById = setTrackById;
 
@@ -786,7 +835,9 @@ function populateCatalog() {
     if (!sel || typeof window.allLoveCatalog === 'undefined') return;
     window.allLoveCatalog.forEach((track, index) => {
         const opt = document.createElement('option');
-        opt.value = index;
+        opt.value = track.id;
+        opt.dataset.index = String(index);
+        opt.dataset.trackId = track.id;
         opt.textContent = `${track.trackNumber}. ${track.title} [${track.key}]`;
         sel.appendChild(opt);
     });
@@ -843,9 +894,13 @@ function animate() {
             beatPunchDecay = audio.beatIntensity;
         }
     } else {
-        // Idle breathing
-        subBass = Math.sin(elapsed * 0.5) * 0.08 * intensity;
-        mids = Math.sin(elapsed * 0.7) * 0.05 * intensity;
+        // Idle "hearing in color" field: visible, slow, and keyed without pretending audio is playing.
+        const breath = Math.sin(elapsed * 0.34) * 0.5 + 0.5;
+        subBass = (0.08 + breath * 0.05) * intensity;
+        bass = (0.025 + Math.sin(elapsed * 0.21) * 0.012) * intensity;
+        mids = (0.07 + Math.sin(elapsed * 0.48) * 0.025) * intensity;
+        highs = (0.018 + breath * 0.02) * intensity;
+        songPhase = 0.12 + breath * 0.08;
     }
 
     // Slower decay = smoother transitions, less stroboscopic
@@ -855,9 +910,10 @@ function animate() {
     // --- Grain time update ---
     if (FX_ENABLED[PERF_TIER]) {
         grainPass.uniforms.uTime.value = elapsed * 0.1;
-        // Grain breathes with song phase
+        // Grain breathes with song phase, but stays cinematic instead of noisy.
         const baseGrain = getIdentity().shader ? (getIdentity().shader.grainBase || 0.06) : 0.06;
-        grainPass.uniforms.uIntensity.value = baseGrain + 0.04 * (audio.songPhase || 0);
+        const phaseGrain = audio.songPhase || songPhase || 0;
+        grainPass.uniforms.uIntensity.value = Math.min(0.035, baseGrain * 0.18 + 0.008 * phaseGrain);
     }
 
     // --- Chromatic aberration: pulse with bass ---
@@ -872,8 +928,8 @@ function animate() {
         transitionProgress = Math.min(tElapsed / TRANSITION_DURATION, 1);
         const wave = Math.sin(transitionProgress * Math.PI); // 0→1→0
         bloomPass.strength = (audio.isActive
-            ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage, 1.8)
-            : (0.25 + intensity * 0.2) * forgeStage) * (1 + wave * 1.4);
+            ? Math.min((0.22 + beatPunchDecay * 0.95 + bass * 0.24 + songPhase * 0.12) * forgeStage, 1.45)
+            : (0.22 + intensity * 0.16) * forgeStage) * (1 + wave * 1.0);
         if (transitionProgress >= 1) transitionActive = false;
     }
 
@@ -886,8 +942,8 @@ function animate() {
     const bloomBoostMult = getIdentity().shader ? (getIdentity().shader.bloomBoost || 1.0) : 1.0;
     if (!transitionActive) {
         bloomPass.strength = audio.isActive
-            ? Math.min((0.25 + beatPunchDecay * 1.2 + bass * 0.3 + songPhase * 0.15) * forgeStage * bloomBoostMult, 1.8)
-            : (0.25 + intensity * 0.2) * forgeStage * bloomBoostMult;
+            ? Math.min((0.22 + beatPunchDecay * 0.95 + bass * 0.24 + songPhase * 0.12) * forgeStage * bloomBoostMult, 1.45)
+            : (0.22 + intensity * 0.16 + songPhase * 0.08) * forgeStage * bloomBoostMult;
     }
 
     // Stats update
@@ -978,6 +1034,7 @@ function animate() {
 function setupPanel() {
     const panel = document.getElementById('controlPanel');
     const hint = document.getElementById('panelHint');
+    const mobileToggle = document.getElementById('mobilePanelToggle');
     if (!panel) return;
 
     let panelOpen = false;
@@ -985,8 +1042,14 @@ function setupPanel() {
     function togglePanel(open) {
         panelOpen = typeof open === 'boolean' ? open : !panelOpen;
         panel.classList.toggle('panel-visible', panelOpen);
+        if (mobileToggle) mobileToggle.classList.toggle('panel-open', panelOpen);
         if (hint) hint.style.opacity = panelOpen ? '0' : '';
     }
+
+    if (mobileToggle) mobileToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePanel();
+    });
 
     // Tab key toggles
     document.addEventListener('keydown', (e) => {
@@ -1017,7 +1080,7 @@ function setupPanel() {
 
     // Click outside closes
     document.addEventListener('click', (e) => {
-        if (panelOpen && !panel.contains(e.target) && e.target !== hint) {
+        if (panelOpen && !panel.contains(e.target) && e.target !== hint && e.target !== mobileToggle) {
             togglePanel(false);
         }
     });
@@ -1035,11 +1098,21 @@ function setupPanel() {
     const forgeEl = document.getElementById('forgeSlider');
     const catBtn = document.getElementById('modeCatalogBtn');
     const liveBtn = document.getElementById('modeLiveBtn');
+    const playBtn = document.getElementById('catalogPlayBtn');
+    const stopBtn = document.getElementById('catalogStopBtn');
     const catControls = document.getElementById('catalogControls');
     const liveControls = document.getElementById('liveAudioControls');
 
     if (trackSel) trackSel.addEventListener('change', (e) => {
         if (currentMode === 'catalog') setTrack(e.target.value);
+    });
+
+    if (playBtn) playBtn.addEventListener('click', () => {
+        if (typeof window.playCurrentCatalogTrack === 'function') window.playCurrentCatalogTrack();
+    });
+
+    if (stopBtn) stopBtn.addEventListener('click', () => {
+        if (typeof window.stopCatalogTrack === 'function') window.stopCatalogTrack();
     });
 
     if (intensityEl) intensityEl.addEventListener('input', (e) => {
